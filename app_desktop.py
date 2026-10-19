@@ -1563,6 +1563,8 @@ class LearningModeWindow:
         self.max_files = 5
         self.current_file = "index.html"
         self.paused = False
+        self.current_subject = ""
+        self.exercise_count = 0
 
         self._build_ui()
         self._start_timer()
@@ -1573,6 +1575,8 @@ class LearningModeWindow:
         header.pack_propagate(False)
 
         ctk.CTkLabel(header, text="Mode Apprentissage", font=ctk.CTkFont(size=16, weight="bold"), text_color=TEXT_MAIN).pack(side="left", padx=15, pady=10)
+        self.exercise_label = ctk.CTkLabel(header, text="Exercice 0", font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_MUTED)
+        self.exercise_label.pack(side="left", padx=15, pady=10)
         self.level_btn = ctk.CTkOptionMenu(header, values=[LEARNING_LEVELS[k]["label"] for k in LEARNING_LEVELS], command=self._on_level_change, width=140)
         self.level_btn.set("Junior")
         self.level_btn.pack(side="right", padx=15, pady=10)
@@ -1722,6 +1726,9 @@ class LearningModeWindow:
     def _display_subject(self, sujet):
         """Affiche le sujet genere par l'IA dans la zone Instructions IA."""
         lv = LEARNING_LEVELS[self.level.get()]
+        self.current_subject = sujet
+        self.exercise_count += 1
+        self.exercise_label.configure(text="Exercice {}".format(self.exercise_count))
         full = (
             "Niveau : {}\n\n".format(lv["label"]) +
             "SUJET DU PROJET (generé par l'IA) :\n{}\n\n".format(sujet) +
@@ -1836,8 +1843,10 @@ class LearningModeWindow:
             "Tolerance aux erreurs : {}.\n"
             "Le but est de creer un site web propre et fonctionnel (HTML, CSS, JS).\n"
             "Si le code est uniquement le squelette par defaut (DOCTYPE + titre + un h1 'Bonjour') sans contenu reel, reponds REFUSE.\n"
+            "CONSIGNES DU PROJET A RESPECTER A LA LETTRE :\n{}\n"
+            "Analyse si le code de l'apprenant correspond REELLEMENT a ces consignes. Si oui, reponds VALIDÉ. Si non, reponds REFUSE.\n"
             "Reponds UNIQUEMENT par 'VALIDÉ' ou 'REFUSE' suivi d'une courte explication en francais.\n"
-            "Ne donne pas de conseil pour corriger, dis seulement si c'est accepte ou non.\n\n{}".format(lv["label"], level, lv["tolerance"], all_code)
+            "Ne donne pas de conseil pour corriger, dis seulement si c'est accepte ou non.\n\n{}".format(lv["label"], level, lv["tolerance"], self.current_subject, all_code)
         )
         self.status_label.configure(text="Verification en cours...", text_color=TEXT_MAIN)
         threading.Thread(target=self._verify_thread, args=(verify_prompt,), daemon=True).start()
@@ -1864,6 +1873,15 @@ class LearningModeWindow:
         self.status_label.configure(text=text, text_color=color)
         elapsed = int(time.time() - self.start_time) if self.start_time else 0
         self._save_time(self.level.get(), elapsed)
+        if "VALIDÉ" in text.upper():
+            self.status_label.configure(text="Exercice reussi ! Generation d'un nouvel exercice...", text_color=ACCENT)
+            # Reset les fichiers au squelette par defaut pour le nouvel exercice
+            self.files = {"index.html": "<!DOCTYPE html>\n<html>\n<head>\n    <title>Mon site</title>\n</head>\n<body>\n    <h1>Bonjour</h1>\n</body>\n</html>"}
+            self.current_file = "index.html"
+            self._refresh_files_ui()
+            self._open_file("index.html")
+            self._set_level_instructions(self.level.get())
+            threading.Thread(target=self._generate_subject, daemon=True).start()
 
     def _save_time(self, level, seconds):
         import json, os
