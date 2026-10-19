@@ -1641,7 +1641,9 @@ class LearningModeWindow:
 
         self.files["index.html"] = "<!DOCTYPE html>\n<html>\n<head>\n    <title>Mon site</title>\n</head>\n<body>\n    <h1>Bonjour</h1>\n</body>\n</html>"
         self._open_file("index.html")
+        self.status_label.configure(text="Generation du sujet en cours...", text_color=TEXT_MAIN)
         self._set_level_instructions("junior")
+        threading.Thread(target=self._generate_subject, daemon=True).start()
 
     def _on_level_change(self, value):
         for k, v in LEARNING_LEVELS.items():
@@ -1650,6 +1652,8 @@ class LearningModeWindow:
                 self.max_files = v["max_files"]
                 self._set_level_instructions(k)
                 self._refresh_files_ui()
+                self.status_label.configure(text="Generation du sujet en cours...", text_color=TEXT_MAIN)
+                threading.Thread(target=self._generate_subject, daemon=True).start()
                 break
 
     def _set_level_instructions(self, key):
@@ -1680,6 +1684,51 @@ class LearningModeWindow:
         else:
             advice = "Conseil : niveau expert, tu es totalement autonome."
         self._set_text(self.ia_advice, advice)
+
+    def _generate_subject(self):
+        """Demande a l'IA de generer un sujet de projet precis avec des consignes structurees."""
+        level = self.level.get()
+        lv = LEARNING_LEVELS[level]
+        prompt = (
+            "Tu es un formateur en developpement web. Genere UN sujet de projet precis et concrete pour un apprenant au niveau {} ({}).\n"
+            "Le sujet doit etre un type de site web (ex: portfolio, landing page, site de voyage, site e-commerce, blog, page de contact, CV en ligne, etc.).\n"
+            "Donne les consignes suivantes de maniere claire et structuree :\n"
+            "1. SUJET : le type exact de site a creer\n"
+            "2. OBJECTIF : ce que le site doit permettre a l'utilisateur de faire\n"
+            "3. PAGES OU SECTIONS : les elements obligatoires a inclure\n"
+            "4. EXIGENCES TECHNIQUES : ce qui est attendu en HTML/CSS/JS selon le niveau\n"
+            "5. CRITERES DE REUSSITE : ce qui sera verifie pour valider le projet\n"
+            "Sois precis, direct et donne un seul sujet (pas de liste au choix). Ecris en francais.\n\nNiveau : {} ({}) - Tolerance : {}".format(
+                lv["label"], level, lv["label"], level, lv["tolerance"]
+            )
+        )
+        try:
+            model = self.app.model_var.get() or MODEL
+            response = ollama.chat(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                options={"temperature": 0.5, "num_predict": 600},
+            )
+            sujet = response["message"]["content"]
+            self.app.after(0, lambda: self._display_subject(sujet))
+        except Exception as e:
+            self.app.after(0, lambda: self.status_label.configure(text="Erreur generation sujet : {}".format(e), text_color="#c24141"))
+
+    def _display_subject(self, sujet):
+        """Affiche le sujet genere par l'IA dans la zone Instructions IA."""
+        lv = LEARNING_LEVELS[self.level.get()]
+        full = (
+            "Niveau : {}\n\n".format(lv["label"]) +
+            "SUJET DU PROJET (generé par l'IA) :\n{}\n\n".format(sujet) +
+            "But : cree ce site web fonctionnel (HTML, CSS, JavaScript) sans aide exterieure.\n" +
+            "Tu ne peux pas parler a l'IA, pas de copier-coller.\n" +
+            "Seul le bouton 'Verifier le site' permet a l'IA de valider ou refuser ton travail.\n" +
+            "Tolerance : {}\n".format(lv["tolerance"]) +
+            "Conseils : {}\n".format(lv["advice_freq"]) +
+            "Nombre de fichiers max : {}".format(lv["max_files"])
+        )
+        self._set_text(self.ia_instructions, full)
+        self.status_label.configure(text="Sujet defini. Commence a coder !", text_color="#0d8a6a")
 
     def _set_text(self, widget, text):
         widget.configure(state="normal")
