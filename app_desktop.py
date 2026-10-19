@@ -1562,6 +1562,7 @@ class LearningModeWindow:
         self.files = {}
         self.max_files = 5
         self.current_file = "index.html"
+        self.paused = False
 
         self._build_ui()
         self._start_timer()
@@ -1633,8 +1634,12 @@ class LearningModeWindow:
         btn_frame = ctk.CTkFrame(self.win, fg_color="transparent")
         btn_frame.pack(fill="x", padx=10, pady=10)
 
-        ctk.CTkButton(btn_frame, text="Abandonner", command=self._abandon, fg_color="#c24141", hover_color="#a33434", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=10)
-        ctk.CTkButton(btn_frame, text="Verifier le site", command=self._verify, fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=12, weight="bold")).pack(side="right", padx=10)
+        self.abandon_btn = ctk.CTkButton(btn_frame, text="Abandonner", command=self._abandon, fg_color="#c24141", hover_color="#a33434", font=ctk.CTkFont(size=12, weight="bold"))
+        self.abandon_btn.pack(side="left", padx=10)
+        self.pause_btn = ctk.CTkButton(btn_frame, text="Pause", command=self._toggle_pause, fg_color="#b45309", hover_color="#d97706", font=ctk.CTkFont(size=12, weight="bold"))
+        self.pause_btn.pack(side="left", padx=10)
+        self.verify_btn = ctk.CTkButton(btn_frame, text="Verifier le site", command=self._verify, fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=12, weight="bold"))
+        self.verify_btn.pack(side="right", padx=10)
 
         self.status_label = ctk.CTkLabel(self.win, text="", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
         self.status_label.pack(pady=(0, 5))
@@ -1754,6 +1759,24 @@ class LearningModeWindow:
         if self.timer_job:
             self.win.after_cancel(self.timer_job)
             self.timer_job = None
+
+    def _toggle_pause(self):
+        self.paused = not self.paused
+        if self.paused:
+            self._stop_timer()
+            self.code_editor.configure(state="disabled")
+            self.pause_btn.configure(text="Reprendre", fg_color="#15803d", hover_color="#16a34a")
+            self.verify_btn.configure(state="disabled")
+            self.status_label.configure(text="En pause - editeur bloque", text_color="#b45309")
+        else:
+            self._start_timer()
+            self.code_editor.configure(state="normal")
+            self.pause_btn.configure(text="Pause", fg_color="#b45309", hover_color="#d97706")
+            self.verify_btn.configure(state="normal")
+            self.status_label.configure(text="Repris - codez !", text_color="#0d8a6a")
+
+    def _set_editor_enabled(self, enabled):
+        self.code_editor.configure(state="normal" if enabled else "disabled")
 
     def _on_code_change(self, event=None):
         self.files[self.current_file] = self.code_editor.get("1.0", "end-1c")
