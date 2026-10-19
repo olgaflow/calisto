@@ -4,6 +4,7 @@ import tkinter as tk
 import os
 import json
 import re
+import html
 import time
 import threading
 from pathlib import Path
@@ -242,23 +243,12 @@ def generer_pdf_minimal(titre, contenu, chemin):
 
 
 
-class DevWindow(ctk.CTkToplevel):
-    def __init__(self, parent_app, ollama_client=None):
-        super().__init__(parent_app)
+class DevWindow(ctk.CTkFrame):
+    def __init__(self, parent_app, master=None, ollama_client=None):
+        super().__init__(master or parent_app, fg_color=BG_APP, corner_radius=0)
         self.parent_app = parent_app
-        self.title("Calisto - Développement")
-        screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
-        window_width = max(900, min(1350, screen_width - 60))
-        window_height = max(600, min(850, screen_height - 100))
-        self.geometry("{}x{}+{}+{}".format(
-            window_width,
-            window_height,
-            max(0, (screen_width - window_width) // 2),
-            max(0, (screen_height - window_height) // 2),
-        ))
-        self.minsize(min(1050, window_width), min(650, window_height))
-        self.configure(fg_color=BG_APP)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(1, weight=1)
 
         self.current_file = None
         self.current_folder = None
@@ -278,6 +268,11 @@ class DevWindow(ctk.CTkToplevel):
         self._inline_suggestion = ""
         self._inline_completion_label = None
         self._inline_replacement_range = None
+        self._multi_completion_popup = None
+        self._pending_completions = {}
+        self._completion_expected = 0
+        self._completion_received = 0
+        self._line_number_redraw_job = None
         self._recent_inline_suggestions = []
         self.autosave_enabled = True
         self.session_file = None  # chemin du dev_session.json du projet courant
@@ -285,18 +280,69 @@ class DevWindow(ctk.CTkToplevel):
         self._build_ui()
         self._load_projects()
         self.after_idle(self._update_preview)
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     def toggle_maximize(self):
-        if self.state() == "zoomed":
-            self.state("normal")
+        window = self.winfo_toplevel()
+        if window.state() == "zoomed":
+            window.state("normal")
             self.maximize_button.configure(text="⛶ Agrandir")
         else:
-            self.state("zoomed")
+            window.state("zoomed")
             self.maximize_button.configure(text="❐ Restaurer")
 
     def _text_widget(self):
         return getattr(self.editor, "_textbox", self.editor)
+
+    def _on_editor_scroll(self, first, last):
+        self.editor._y_scrollbar.set(first, last)
+        self._queue_line_number_redraw()
+
+    def _on_editor_modified(self, event=None):
+        if self._line_number_redraw_job is None:
+            self._line_number_redraw_job = self.after_idle(self._finish_editor_modified)
+
+    def _finish_editor_modified(self):
+        self._line_number_redraw_job = None
+        text_widget = self._text_widget()
+        if text_widget.edit_modified():
+            text_widget.edit_modified(False)
+        self._redraw_line_numbers()
+
+    def _queue_line_number_redraw(self, event=None):
+        if self._line_number_redraw_job is None:
+            self._line_number_redraw_job = self.after_idle(self._finish_line_number_redraw)
+
+    def _finish_line_number_redraw(self):
+        self._line_number_redraw_job = None
+        self._redraw_line_numbers()
+
+    def _redraw_line_numbers(self):
+        if not hasattr(self, "line_numbers") or not self.line_numbers.winfo_exists():
+            return
+        canvas = self.line_numbers
+        canvas.delete("all")
+        text_widget = self._text_widget()
+        index = text_widget.index("@0,0")
+        previous_line = None
+        while True:
+            line = int(index.split(".")[0])
+            if line != previous_line:
+                info = text_widget.dlineinfo(index)
+                if info is None or info[1] > canvas.winfo_height():
+                    break
+                canvas.create_text(
+                    canvas.winfo_width() - 8,
+                    info[1] + info[3] / 2,
+                    text=str(line),
+                    anchor="e",
+                    fill="#858585",
+                    font=text_widget.cget("font"),
+                )
+                previous_line = line
+            next_index = text_widget.index("{} + 1 display lines".format(index))
+            if next_index == index:
+                break
+            index = next_index
 
     def _build_ui(self):
         self.grid_columnconfigure(1, weight=1)
@@ -357,11 +403,11 @@ class DevWindow(ctk.CTkToplevel):
         # Éditeur
         self.editor_frame = ctk.CTkFrame(self.main_area, fg_color=BG_EDITOR, corner_radius=0)
         self.editor_frame.grid(row=0, column=0, sticky="nsew")
-        self.editor_frame.grid_columnconfigure(0, weight=1)
+        self.editor_frame.grid_columnconfigure(1, weight=1)
         self.editor_frame.grid_rowconfigure(1, weight=1)
 
         editor_header = ctk.CTkFrame(self.editor_frame, fg_color="#2a2a2e", height=30, corner_radius=0)
-        editor_header.grid(row=0, column=0, sticky="ew")
+        editor_header.grid(row=0, column=0, columnspan=2, sticky="ew")
         editor_header.grid_propagate(False)
         self.file_name_label = ctk.CTkLabel(editor_header, text="Aucun fichier", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
         self.file_name_label.pack(side="left", padx=10, pady=5)
@@ -375,12 +421,39 @@ class DevWindow(ctk.CTkToplevel):
         ctk.CTkButton(editor_quick, text="💾 Auto-save: ON", width=90, command=self.toggle_autosave, fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
         ctk.CTkButton(editor_quick, text="🌐 Navigateur", width=90, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
         ctk.CTkButton(editor_quick, text="✨ Formater", width=85, command=self.format_code, fg_color="#9333ea", hover_color="#7e22ce", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
+        ctk.CTkButton(editor_quick, text="🔍 Rechercher (Ctrl+F)", width=105, command=self._show_find_replace, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
+        ctk.CTkButton(editor_quick, text="📍 Ligne (Ctrl+G)", width=100, command=self._goto_line, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
+        ctk.CTkButton(editor_quick, text="💬 Commenter (Ctrl+/)", width=105, command=self._toggle_comment, fg_color="#a855f7", hover_color="#9333ea", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
+        ctk.CTkButton(editor_quick, text="📄 Retour ligne", width=90, command=self._toggle_word_wrap, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
 
+        self.line_numbers = tk.Canvas(
+            self.editor_frame,
+            width=44,
+            bg="#252526",
+            highlightthickness=0,
+            bd=0,
+        )
+        self.line_numbers.grid(row=1, column=0, sticky="ns", padx=(5, 0), pady=5)
+        self.line_numbers.bind("<Configure>", self._queue_line_number_redraw)
         self.editor = ctk.CTkTextbox(self.editor_frame, font=ctk.CTkFont(family="Consolas", size=13), fg_color=BG_EDITOR, text_color=TEXT_MAIN, border_width=0)
-        self.editor.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+        self.editor.grid(row=1, column=1, sticky="nsew", padx=(0, 5), pady=5)
+        self._text_widget().configure(yscrollcommand=self._on_editor_scroll)
+        self._text_widget().bind("<<Modified>>", self._on_editor_modified, add="+")
+        self._text_widget().bind("<Configure>", self._queue_line_number_redraw, add="+")
         self.editor.bind("<KeyRelease>", self.on_key_release)
+        self.editor.bind("<Return>", self.on_editor_return)
         self.editor.bind("<Tab>", self.on_tab)
         self.editor.bind("<Escape>", self._reject_inline_completion_key)
+        self.editor.bind("<Key>", self._on_auto_close_key)
+        self.editor.bind("<Control-MouseWheel>", self._on_ctrl_wheel_zoom)
+        self.editor.bind("<Control-slash>", self._toggle_comment)
+        self.editor.bind("<Control-f>", lambda e: self._show_find_replace())
+        self.editor.bind("<Control-g>", lambda e: self._goto_line())
+        self.editor.bind("<Control-h>", lambda e: self._show_find_replace())
+        self.editor.bind("<Control-s>", lambda e: self.save_file())
+        self.editor.bind("<Right>", self._match_bracket)
+        self.editor.bind("<Left>", self._match_bracket)
+        self.editor.bind("<KeyRelease>", self._update_status_line_col, add="+")
 
         # Panneau droit : onglets prévisualisation / IA
         self.right_panel = ctk.CTkFrame(self.main_area, fg_color=BG_PANEL, corner_radius=0)
@@ -931,12 +1004,451 @@ class DevWindow(ctk.CTkToplevel):
         if self.current_file and self.editor.winfo_exists():
             self._file_buffers[self.current_file.resolve()] = self.editor.get("1.0", "end-1c")
 
+    def _auto_expand_html_tag(self):
+        if not self.current_file:
+            return False
+        if self.current_file.suffix.lower() not in (".html", ".htm"):
+            return False
+        text_widget = self._text_widget()
+        try:
+            before = text_widget.get("insert linestart", "insert")
+        except Exception:
+            return False
+        m = re.search(r"([A-Za-z][A-Za-z0-9]*)$", before)
+        if not m:
+            return False
+        tag = m.group(1).lower()
+        html_tags = {
+            "p", "div", "span", "a", "h1", "h2", "h3", "h4", "h5", "h6",
+            "ul", "ol", "li", "table", "tr", "td", "th", "thead", "tbody",
+            "header", "footer", "nav", "section", "article", "aside", "main",
+            "form", "input", "button", "select", "option", "textarea", "label",
+            "img", "br", "hr", "meta", "link", "script", "style", "title",
+            "small", "strong", "em", "b", "i", "u", "code", "pre", "blockquote",
+            "dl", "dt", "dd", "figure", "figcaption", "details", "summary",
+            "menu", "fieldset", "legend", "datalist", "output", "progress",
+            "canvas", "audio", "video", "source", "track", "map", "area",
+        }
+        self_closing = {"img", "br", "hr", "input", "meta", "link", "source", "track", "area", "col"}
+        if tag not in html_tags:
+            return False
+        # Only expand when the tag word is standalone (preceded by whitespace/start/>/< or nothing)
+        start = m.start(1)
+        prev = before[start - 1] if start > 0 else ""
+        # Expand only when the tag word is standalone: at line start or after whitespace.
+        if prev and not prev.isspace():
+            return False
+        start_idx = "insert linestart + {} chars".format(m.start(1))
+        end_idx = "insert linestart + {} chars".format(m.end(1))
+        if tag in self_closing:
+            replacement = "<{}>".format(tag)
+            text_widget.delete(start_idx, end_idx)
+            text_widget.insert(start_idx, replacement)
+            text_widget.mark_set("insert", "{} + {} chars".format(start_idx, len(replacement)))
+        else:
+            replacement = "<{}></{}>".format(tag, tag)
+            text_widget.delete(start_idx, end_idx)
+            text_widget.insert(start_idx, replacement)
+            text_widget.mark_set("insert", "{} + {} chars".format(start_idx, len("<{}>".format(tag))))
+        self._schedule_highlight()
+        self._schedule_preview()
+        return True
+
+    # ---------- Auto-fermeture des paires ----------
+    def _on_auto_close_key(self, event=None):
+        if not self.current_file:
+            return None
+        text_widget = self._text_widget()
+        pairs = {"(": ")", "{": "}", "[": "]", '"': '"', "'": "'"}
+        char = event.char
+        if char in pairs:
+            # Ne pas auto-fermer si le caractère est déjà présent juste après le curseur (évite les doublons)
+            try:
+                after = text_widget.get("insert", "insert + 1c")
+            except Exception:
+                after = ""
+            if after == pairs[char]:
+                return None
+            text_widget.insert("insert", char + pairs[char])
+            text_widget.mark_set("insert", "insert + 1c")
+            self._schedule_highlight()
+            return "break"
+        # Gérer la fermeture : si l'utilisateur tape )}], et que le char suivant est déjà le même, avancer seulement
+        closers = {")", "}", "]", '"', "'"}
+        if char in closers:
+            try:
+                after = text_widget.get("insert", "insert + 1c")
+            except Exception:
+                after = ""
+            if after == char:
+                text_widget.mark_set("insert", "insert + 1c")
+                self._schedule_highlight()
+                return "break"
+        return None
+
+    # ---------- Zoom Ctrl + molette ----------
+    def _on_ctrl_wheel_zoom(self, event=None):
+        try:
+            delta = event.delta
+        except Exception:
+            return None
+        current = int(self.editor.cget("font").split(" ")[-1]) if self.editor.cget("font") else 13
+        step = 1 if delta > 0 else -1
+        new_size = max(8, min(24, current + step))
+        self.editor.configure(font=ctk.CTkFont(family="Consolas", size=new_size))
+        self._text_widget().configure(font=ctk.CTkFont(family="Consolas", size=new_size))
+        self._redraw_line_numbers()
+        return "break"
+
+    # ---------- Toggle comment Ctrl+/
+    def _toggle_comment(self, event=None):
+        if not self.current_file:
+            return "break"
+        text_widget = self._text_widget()
+        try:
+            sel_ranges = text_widget.tag_ranges("sel")
+        except Exception:
+            sel_ranges = []
+        language = LANG_EXTENSIONS.get(self.current_file.suffix.lower(), "text")
+        comment_prefix = self._comment_prefix_for(language)
+        if sel_ranges:
+            start = sel_ranges[0]
+            end = sel_ranges[-1]
+            lines = text_widget.get(start, end).splitlines()
+            # Détecter si déjà commenté (première ligne non vide commence par le prefix)
+            already = all((ln.strip().startswith(comment_prefix) or ln.strip() == "") for ln in lines if ln.strip())
+            new_lines = []
+            for ln in lines:
+                if ln.strip() == "":
+                    new_lines.append(ln)
+                elif already:
+                    if ln.startswith(comment_prefix):
+                        new_lines.append(ln[len(comment_prefix):])
+                    else:
+                        new_lines.append(ln)
+                else:
+                    new_lines.append(comment_prefix + ln)
+            replacement = "\n".join(new_lines)
+            text_widget.delete(start, end)
+            text_widget.insert(start, replacement)
+            text_widget.tag_remove("sel", "1.0", "end")
+            text_widget.tag_add("sel", start, "{} + {} chars".format(start, len(replacement)))
+        else:
+            # Ligne courante
+            line_start = text_widget.index("insert linestart")
+            line_end = text_widget.index("insert lineend")
+            ln = text_widget.get(line_start, line_end)
+            if ln.strip() == "":
+                return "break"
+            if ln.strip().startswith(comment_prefix):
+                new_ln = ln[len(comment_prefix):] if ln.startswith(comment_prefix) else ln
+            else:
+                new_ln = comment_prefix + ln
+            text_widget.delete(line_start, line_end)
+            text_widget.insert(line_start, new_ln)
+        self.on_key_release()
+        return "break"
+
+    @staticmethod
+    def _comment_prefix_for(language):
+        if language in ("python", "ruby", "shell", "yaml", "sh", "makefile"):
+            return "# "
+        if language in ("javascript", "typescript", "js", "ts", "java", "c", "cpp", "cs", "go", "rust", "php", "dart", "swift", "kotlin"):
+            return "// "
+        if language in ("css", "scss", "less"):
+            return "/* */"
+        if language == "html":
+            return "<!-- -->"
+        return "# "
+
+    # ---------- Find / Replace ----------
+    def _show_find_replace(self):
+        win = ctk.CTkToplevel(self)
+        win.title("Rechercher / Remplacer")
+        win.geometry("420x190")
+        win.configure(fg_color=BG_PANEL)
+        win.transient(self)
+        win.grab_set()
+        ctk.CTkLabel(win, text="Rechercher :", font=ctk.CTkFont(size=12), text_color=TEXT_MAIN).pack(pady=(14, 4), padx=14, anchor="w")
+        find_var = ctk.StringVar()
+        find_entry = ctk.CTkEntry(win, textvariable=find_var, width=360, fg_color=BG_EDITOR, border_color="#4b4c54", text_color=TEXT_MAIN)
+        find_entry.pack(padx=14, pady=(0, 10))
+        ctk.CTkLabel(win, text="Remplacer par :", font=ctk.CTkFont(size=12), text_color=TEXT_MAIN).pack(pady=(0, 4), padx=14, anchor="w")
+        replace_var = ctk.StringVar()
+        replace_entry = ctk.CTkEntry(win, textvariable=replace_var, width=360, fg_color=BG_EDITOR, border_color="#4b4c54", text_color=TEXT_MAIN)
+        replace_entry.pack(padx=14, pady=(0, 14))
+        btns = ctk.CTkFrame(win, fg_color="transparent")
+        btns.pack()
+        text_widget = self._text_widget()
+
+        def do_find(direction=1):
+            needle = find_var.get()
+            if not needle:
+                return
+            text_widget.tag_remove("sel", "1.0", "end")
+            start = text_widget.index("insert")
+            if direction > 0:
+                pos = text_widget.search(needle, start, stopindex="end", nocase=True)
+            else:
+                pos = text_widget.search(needle, start, stopindex="1.0", backwards=True, nocase=True)
+            if pos:
+                end = "{} + {} chars".format(pos, len(needle))
+                text_widget.tag_add("sel", pos, end)
+                text_widget.mark_set("insert", end)
+                text_widget.see(pos)
+            else:
+                self.status_var.set("Aucune correspondance pour '{}'".format(needle))
+
+        def do_replace():
+            needle = find_var.get()
+            repl = replace_var.get()
+            if not needle:
+                return
+            try:
+                pos = text_widget.index("sel.first")
+                end = text_widget.index("sel.last")
+            except Exception:
+                return
+            if text_widget.get(pos, end) == needle:
+                text_widget.delete(pos, end)
+                text_widget.insert(pos, repl)
+                text_widget.tag_remove("sel", "1.0", "end")
+                text_widget.tag_add("sel", pos, "{} + {} chars".format(pos, len(repl)))
+                text_widget.mark_set("insert", "{} + {} chars".format(pos, len(repl)))
+            do_find(1)
+
+        def do_replace_all():
+            needle = find_var.get()
+            repl = replace_var.get()
+            if not needle:
+                return
+            content = text_widget.get("1.0", "end-1c")
+            new_content = content.replace(needle, repl)
+            if new_content != content:
+                text_widget.delete("1.0", "end")
+                text_widget.insert("1.0", new_content)
+                self.on_key_release()
+                self.status_var.set("Remplacement terminé")
+
+        ctk.CTkButton(btns, text="Trouver suivant", command=lambda: do_find(1), fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=6, pady=4)
+        ctk.CTkButton(btns, text="Trouver précédent", command=lambda: do_find(-1), fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=6, pady=4)
+        ctk.CTkButton(btns, text="Remplacer", command=do_replace, fg_color="#a855f7", hover_color="#9333ea", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=6, pady=4)
+        ctk.CTkButton(btns, text="Tout remplacer", command=do_replace_all, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=11, weight="bold")).pack(side="left", padx=6, pady=4)
+        ctk.CTkButton(btns, text="Fermer", command=win.destroy, fg_color="#4b5563", hover_color="#3a3a3e", font=ctk.CTkFont(size=11)).pack(side="left", padx=6, pady=4)
+        find_entry.focus()
+        win.bind("<Return>", lambda e: do_find(1))
+        win.bind("<Control-Return>", lambda e: do_replace())
+        win.bind("<Escape>", lambda e: win.destroy())
+
+    # ---------- Goto Line ----------
+    def _goto_line(self):
+        if not self.current_file:
+            messagebox.showwarning("Aucun fichier", "Ouvrez un fichier d'abord.")
+            return
+        dlg = ctk.CTkInputDialog(text="Numéro de ligne :", title="Aller à la ligne")
+        val = dlg.get_input()
+        if not val:
+            return
+        try:
+            n = int(val)
+        except ValueError:
+            return
+        text_widget = self._text_widget()
+        total = int(text_widget.index("end-1c").split(".")[0])
+        if n < 1:
+            n = 1
+        if n > total:
+            n = total
+        idx = "{}.0".format(n)
+        text_widget.mark_set("insert", idx)
+        text_widget.see(idx)
+        text_widget.tag_remove("sel", "1.0", "end")
+        self.status_var.set("Ligne {}".format(n))
+
+    # ---------- Word wrap ----------
+    def _toggle_word_wrap(self):
+        wrap = self.editor.cget("wrap")
+        new = "none" if wrap == "char" else "char"
+        self.editor.configure(wrap=new)
+        self.status_var.set("Retour à la ligne : {}".format("ON" if new == "char" else "OFF"))
+
+    # ---------- Status line/col ----------
+    def _update_status_line_col(self, event=None):
+        if not self.current_file:
+            return
+        text_widget = self._text_widget()
+        try:
+            index = text_widget.index("insert")
+            line, col = index.split(".")
+            total_lines = int(text_widget.index("end-1c").split(".")[0])
+            self.status_var.set("Ligne {}, Colonne {} / {}".format(line, int(col) + 1, total_lines))
+        except Exception:
+            pass
+
+    # ---------- Bracket matching ----------
+    def _match_bracket(self, event=None):
+        if not self.current_file:
+            return None
+        text_widget = self._text_widget()
+        for tag in ("bracket_match",):
+            try:
+                text_widget.tag_remove(tag, "1.0", "end")
+            except Exception:
+                pass
+        pairs = {"(": ")", ")": "(", "{": "}", "}": "{", "[": "]", "]": "["}
+        try:
+            index = text_widget.index("insert")
+            char = text_widget.get(index)
+            if char not in pairs:
+                return None
+            # chercher le correspondant
+            target = pairs[char]
+            found = self._find_matching(text_widget, index, char, target)
+            if found:
+                text_widget.tag_add("bracket_match", index, "{} + 1c".format(index))
+                text_widget.tag_add("bracket_match", found, "{} + 1c".format(found))
+                try:
+                    text_widget.tag_config("bracket_match", background="#4a4a4e", foreground="#ffffff")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _find_matching(text_widget, start, open_char, close_char):
+        # Implémentation simple : scan ligne par ligne (évite la récursion lourde)
+        try:
+            start_index = text_widget.index(start)
+            line, col = start_index.split(".")
+            line = int(line)
+            col = int(col)
+            content = text_widget.get("{} linestart".format(start_index), "{} lineend".format(start_index))
+        except Exception:
+            return None
+        # Direction selon qu'on est sur un ouvrant ou fermant
+        opens = {"(", "{", "["}
+        if open_char in opens:
+            # chercher vers l'avant
+            stack = 1
+            idx = text_widget.index(start)
+            text_all = text_widget.get(start, "end")
+            pos = 0
+            while pos < len(text_all):
+                c = text_all[pos]
+                if c == open_char:
+                    stack += 1
+                elif c == close_char:
+                    stack -= 1
+                    if stack == 0:
+                        return "{} + {} chars".format(start, pos)
+                pos += 1
+        else:
+            # chercher vers l'arrière
+            stack = 1
+            idx = text_widget.index(start)
+            text_all = text_widget.get("1.0", start)
+            pos = len(text_all) - 1
+            while pos >= 0:
+                c = text_all[pos]
+                if c == close_char:
+                    stack += 1
+                elif c == open_char:
+                    stack -= 1
+                    if stack == 0:
+                        return "1.0 + {} chars".format(pos)
+                pos -= 1
+        return None
+
+    def _expand_emmet(self):
+        if not self.current_file:
+            return False
+        if self.current_file.suffix.lower() not in (".html", ".htm"):
+            return False
+        text_widget = self._text_widget()
+        try:
+            line = text_widget.get("insert linestart", "insert lineend")
+        except Exception:
+            return False
+        cursor_col = int(text_widget.index("insert").split(".")[1])
+        before = line[:cursor_col]
+        m = re.search(r"([A-Za-z][A-Za-z0-9\-]*(?:[.#][A-Za-z0-9\-_]+)*)(?:\*(\d+))?$", before)
+        if not m:
+            return False
+        token = m.group(1)
+        count = int(m.group(2) or 1)
+        has_mod = (count > 1) or ("." in token) or ("#" in token) or (">" in token) or ("+" in token)
+        if not has_mod:
+            return False
+        start_idx = "insert linestart + {} chars".format(m.start(1))
+        end_idx = "insert linestart + {} chars".format(cursor_col)
+        try:
+            expansion = self._emmet_build(token, count)
+        except Exception:
+            return False
+        text_widget.delete(start_idx, end_idx)
+        text_widget.insert(start_idx, expansion)
+        text_widget.mark_set("insert", "{} + {} chars".format(start_idx, len(expansion)))
+        self._schedule_highlight()
+        self._schedule_preview()
+        return True
+
+    @staticmethod
+    def _emmet_build(token, count):
+        def build_one(tok):
+            # tag.class#id
+            m = re.match(r"^([A-Za-z][A-Za-z0-9\-]*)((?:\.[A-Za-z0-9\-_]+)?(?:\#[A-Za-z0-9\-_]+)?)$", tok)
+            if not m:
+                return "<{}></{}>".format(tok, tok)
+            tag = m.group(1)
+            mods = m.group(2) or ""
+            classes = re.findall(r"\.([A-Za-z0-9\-_]+)", mods)
+            ids = re.findall(r"\#([A-Za-z0-9\-_]+)", mods)
+            attrs = ""
+            if classes:
+                attrs += ' class="{}"'.format(" ".join(classes))
+            if ids:
+                attrs += ' id="{}"'.format(ids[0])
+            self_closing = {"img", "br", "hr", "input", "meta", "link", "source", "track", "area", "col"}
+            if tag.lower() in self_closing:
+                return "<{}{}>".format(tag, attrs)
+            return "<{}{}></{}>".format(tag, attrs, tag)
+
+        # Handle sibling +
+        parts = [p for p in token.split("+") if p]
+        if len(parts) > 1:
+            return "\n".join(build_one(p) for p in parts)
+
+        # Handle child >
+        if ">" in token:
+            parent, child = token.split(">", 1)
+            cm = re.match(r"^(.+?)(?:\*(\d+))?$", child)
+            child_tok = cm.group(1)
+            child_count = int(cm.group(2) or 1)
+            parent_one = build_one(parent)
+            child_one = build_one(child_tok)
+            if child_count > 1:
+                child_block = "\n".join("    " + child_one for _ in range(child_count))
+            else:
+                child_block = "    " + child_one
+            ptag = re.match(r"^([A-Za-z][A-Za-z0-9\-]*)", parent).group(1)
+            return "<{}>{}\n</{}>".format(ptag, child_block, ptag)
+
+        one = build_one(token)
+        if count <= 1:
+            return one
+        return "\n".join(one for _ in range(count))
+
     def on_key_release(self, event=None):
         self.unsaved = True
         self._cache_current_buffer()
         self.file_name_label.configure(text=(self.current_file.name if self.current_file else "Sans titre") + " ●")
         self._invalidate_inline_completion()
         self._check_emmet()
+        if self._expand_emmet():
+            return
+        if self._auto_expand_html_tag():
+            return
         self._schedule_highlight()
         self._schedule_preview()
         if self.autosave_enabled and self.current_file:
@@ -978,12 +1490,13 @@ class DevWindow(ctk.CTkToplevel):
                 self.after_cancel(self._completion_job)
             except Exception:
                 pass
-        self._completion_job = self.after(600, self._request_inline_completion)
+        self._completion_job = self.after(600, self._request_inline_completions)
 
-    def _request_inline_completion(self):
+    def _request_inline_completions(self):
         self._completion_job = None
         if not self._inline_completion_is_enabled() or not self.current_file:
             return
+        self._dismiss_multi_popup()
         text_widget = self._text_widget()
         before_cursor = text_widget.get("1.0", "insert")
         after_cursor = text_widget.get("insert", "end-1c")
@@ -991,6 +1504,7 @@ class DevWindow(ctk.CTkToplevel):
             return
 
         generation = self._completion_generation
+        self._completion_generation += 1
         content = text_widget.get("1.0", "end-1c")
         line_start = text_widget.index("insert linestart")
         line_end = text_widget.index("insert lineend")
@@ -1004,10 +1518,10 @@ class DevWindow(ctk.CTkToplevel):
         replacement_range = (line_start, line_end) if replace_line else None
         model = self.parent_app.model_var.get() or "llama3.2"
         file_name = self.current_file.name
-        prefix = before_cursor[-8000:]
-        suffix = after_cursor[:3000]
-        file_context = content[:24000]
-        if len(content) > 24000:
+        prefix = before_cursor[-3000:]
+        suffix = after_cursor[:1500]
+        file_context = content[:8000]
+        if len(content) > 8000:
             file_context += "\n...[contenu intermediaire tronque; prefixe et suffixe du curseur transmis separement]..."
         existing_html_structure = ", ".join(
             "<{}>".format(tag)
@@ -1018,42 +1532,39 @@ class DevWindow(ctk.CTkToplevel):
             "- {}".format(item) for item in self._recent_inline_suggestions[-6:]
         ) or "Aucune"
 
-        def worker():
+        self._pending_completions = {}
+        self._completion_expected = 2
+        self._completion_received = 0
+
+        def worker(variant_idx, temperature):
             try:
+                variant_system = (
+                    "Tu es un assistant de programmation inline rigoureux. Avant toute suggestion, inspecte "
+                    "le code existant dans son ensemble, le contexte autour du curseur et les structures "
+                    "deja declarees. N'ajoute que le code strictement necessaire a l'endroit du curseur. "
+                    "N'enveloppe jamais un fragment dans une deuxieme page ou une structure parente deja "
+                    "presente : si html, head ou body existent, ne propose ni ces balises ni leur contenu "
+                    "global une seconde fois. Ne recree pas de document complet pour completer une liste, "
+                    "un paragraphe, une regle CSS ou une fonction. Aide dans tout le fichier, pas seulement "
+                    "dans un langage ou une balise : HTML, CSS, JavaScript, Python et les autres langages "
+                    "indiques. Analyse les deux cotes du curseur et le code environnant. "
+                    "Retourne uniquement du code, sans explication ni Markdown. Complete ou corrige "
+                    "l'intention de l'utilisateur avec une proposition utile et coherente. Analyse les "
+                    "syntaxes incompletes et les structures deja presentes. "
+                    "Apres une balise HTML ouverte comme <p>, propose une ligne complete et utile. "
+                    "Apres un selecteur CSS ou une declaration incomplete, propose une regle exploitable; "
+                    "dans JavaScript, Python et les autres langages, complete l'expression ou le bloc. "
+                    "Si le mode demande de remplacer la ligne, retourne la ligne corrigee complete en "
+                    "preservant l'indentation et ce que l'utilisateur a deja ecrit. Sinon, retourne "
+                    "uniquement le suffixe a inserer au curseur. Ne repete pas du code existant. "
+                    "REGLE OBLIGATOIRE : ecris toujours les caracteres en brut UTF-8 (apostrophe ', accent e/è/é, etc.). "
+                    "N'utilise JAMAIS d'entites HTML (&#39;, &amp;, &eacute;, &egrave;, &ecirc;, &quot;, &lt;, &gt; ...). "
+                    "Variante {}: propose une approche differente mais valide pour le même contexte."
+                ).format(variant_idx + 1)
                 response = ollama.chat(
                     model=model,
                     messages=[
-                        {
-                            "role": "system",
-                            "content": (
-                                "Tu es un assistant de programmation inline rigoureux. Avant toute suggestion, inspecte "
-                                "le code existant dans son ensemble, le contexte autour du curseur et les structures "
-                                "deja declarees. N'ajoute que le code strictement necessaire a l'endroit du curseur. "
-                                "N'enveloppe jamais un fragment dans une deuxieme page ou une structure parente deja "
-                                "presente : si html, head ou body existent, ne propose ni ces balises ni leur contenu "
-                                "global une seconde fois. Ne recree pas de document complet pour completer une liste, "
-                                "un paragraphe, une regle CSS ou une fonction. Aide dans tout le fichier, pas seulement "
-                                "dans un langage ou une balise : HTML, CSS, JavaScript, Python et les autres langages "
-                                "indiques. Analyse les deux cotes du curseur et le code environnant. "
-                                "Retourne uniquement du code, sans explication ni Markdown. Complete ou corrige "
-                                "l'intention de l'utilisateur avec une proposition utile et coherente, et pas "
-                                "seulement une balise fermante ou un caractere ajoute machinalement. Analyse les "
-                                "syntaxes incompletes et les structures deja presentes pour tous les langages. "
-                                "Apres une balise HTML ouverte comme <p>, propose une ligne complete et utile "
-                                "(contenu pertinent suivi de sa fermeture), sans dupliquer un contenu deja present. "
-                                "Apres un selecteur CSS ou une declaration incomplete, propose une regle exploitable; "
-                                "dans JavaScript, Python et les autres langages, complete l'expression ou le bloc "
-                                "selon le contexte. Les suggestions peuvent contenir plusieurs lignes quand le "
-                                "contexte le justifie. Si le mode demande de remplacer la ligne, retourne la ligne "
-                                "corrigee complete ou le bloc complet qui la remplace, en preservant son indentation "
-                                "et ce que l'utilisateur a deja ecrit; ne retourne pas seulement un suffixe. Sinon, "
-                                "retourne uniquement le suffixe a inserer au curseur. Ne repete pas du code existant "
-                                "et n'ajoute pas de bloc sans "
-                                "rapport. Pour les phrases visibles du site ou les textes d'interface, compare les "
-                                "phrases deja presentes et les suggestions recentes : ne reutilise pas une phrase "
-                                "identique, varie la formulation et le vocabulaire tout en gardant le meme sens."
-                            ),
-                        },
+                        {"role": "system", "content": variant_system},
                         {
                             "role": "user",
                             "content": (
@@ -1079,32 +1590,169 @@ class DevWindow(ctk.CTkToplevel):
                             ),
                         },
                     ],
-                    options={"temperature": 0.1, "num_ctx": 16384, "num_predict": 320},
+                    options={"temperature": temperature, "num_ctx": 8192, "num_predict": 160},
                 )
                 completion = response.get("message", {}).get("content", "")
                 suggestion = completion.strip()
                 if suggestion.startswith("```") and suggestion.endswith("```"):
                     suggestion = re.sub(r"^```[^\n]*\n|```$", "", suggestion).strip()
                 if not suggestion or suggestion.startswith("```"):
-                    return
-                suggestion = self._filter_duplicate_completion(suggestion, content)
-                if not suggestion:
-                    return
-                if replace_line:
-                    suggestion = self._normalize_inline_replacement(
-                        suggestion, current_line, language, replacement_mode
-                    )
-                if suggestion:
-                    self.after(
-                        0,
-                        lambda: self._show_inline_completion(
-                            generation, before_cursor, suggestion, replacement_range
-                        ),
-                    )
+                    suggestion = None
+                else:
+                    suggestion = self._filter_duplicate_completion(suggestion, content)
+                    if not suggestion:
+                        suggestion = None
+                    elif replace_line:
+                        suggestion = self._normalize_inline_replacement(
+                            suggestion, current_line, language, replacement_mode
+                        )
             except Exception as error:
-                self.after(0, lambda message=str(error): self._show_completion_error(generation, message))
+                suggestion = None
+            self.after(0, lambda g=generation, v=variant_idx, s=suggestion: self._on_one_completion(g, v, s, before_cursor, replacement_range))
 
-        threading.Thread(target=worker, daemon=True).start()
+        for i in range(2):
+            threading.Thread(target=worker, args=(i, 0.1 + 0.05 * i), daemon=True).start()
+
+    def _on_one_completion(self, generation, variant_idx, suggestion, before_cursor, replacement_range):
+        if generation != self._completion_generation - 1:
+            return
+        if suggestion:
+            suggestion = self._sanitize_suggestion(suggestion)
+            self._pending_completions[variant_idx] = suggestion
+        self._completion_received += 1
+        if self._completion_received >= self._completion_expected:
+            self._show_multi_completions(before_cursor, replacement_range)
+
+    def _show_multi_completions(self, before_cursor, replacement_range):
+        self._dismiss_multi_popup()
+        if not self._pending_completions:
+            return
+        popup = tk.Toplevel(self)
+        popup.wm_overrideredirect(True)
+        popup.configure(bg="#1f2937")
+        popup.attributes("-topmost", True)
+        self._multi_completion_popup = popup
+
+        header = tk.Label(popup, text="Choisissez une suggestion :", bg="#374151", fg="#ffffff",
+                          font=("Consolas", 10, "bold"), padx=8, pady=6, anchor="w")
+        header.pack(fill="x")
+
+        list_frame = tk.Frame(popup, bg="#1f2937")
+        list_frame.pack(fill="both", expand=True)
+
+        canvas = tk.Canvas(list_frame, bg="#1f2937", highlightthickness=0, bd=0)
+        scrollbar = tk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        scrollable = tk.Frame(canvas, bg="#1f2937")
+
+        scrollable.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas.create_window((0, 0), window=scrollable, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+        ordered = sorted(self._pending_completions.items())
+        self._multi_options = ordered
+
+        def make_inserter(suggestion, repl_range):
+            def insert_one():
+                self._insert_selected_completion(suggestion, repl_range, before_cursor)
+                self._dismiss_multi_popup()
+            return insert_one
+
+        for idx, (variant, suggestion) in enumerate(ordered):
+            row = tk.Frame(scrollable, bg="#1f2937")
+            row.pack(fill="x", padx=4, pady=2)
+            num_lbl = tk.Label(row, text="Option {}".format(variant + 1), bg="#374151", fg="#a1a1aa",
+                               font=("Consolas", 9, "bold"), padx=6, pady=2, width=14, anchor="w")
+            num_lbl.pack(side="left")
+            preview = suggestion.replace("\n", " \\ ")
+            if len(preview) > 70:
+                preview = preview[:70] + "..."
+            btn = tk.Button(row, text=preview, bg="#374151", fg="#d1d5db",
+                            font=("Consolas", 10), bd=0, padx=6, pady=4, anchor="w",
+                            cursor="hand2", relief="flat",
+                            command=make_inserter(suggestion, replacement_range))
+            btn.pack(side="left", fill="x", expand=True)
+
+        footer = tk.Frame(popup, bg="#1f2937")
+        footer.pack(fill="x")
+        tk.Button(footer, text="Fermer (Echap)", bg="#4b5563", fg="#ffffff",
+                  font=("Consolas", 10), bd=0, padx=8, pady=4,
+                  command=self._dismiss_multi_popup).pack(side="right", padx=6, pady=4)
+        popup.bind("<Escape>", lambda e: self._dismiss_multi_popup())
+
+        text_widget = self._text_widget()
+        cursor_box = text_widget.bbox("insert")
+        if cursor_box:
+            x, y, _, line_height = cursor_box
+            # Coordinates du curseur en coordonnées écran (fiables pour un Toplevel)
+            sx = text_widget.winfo_rootx() + x
+            sy = text_widget.winfo_rooty() + y + line_height
+            widget_width = max(1, text_widget.winfo_width())
+            popup_width = min(560, max(300, widget_width - 20))
+            popup.update_idletasks()
+            popup_height = popup.winfo_reqheight()
+            screen_w = popup.winfo_screenwidth()
+            screen_h = popup.winfo_screenheight()
+            sx = min(max(4, sx), max(4, screen_w - popup_width - 4))
+            if sy + popup_height > screen_h:
+                sy = max(4, text_widget.winfo_rooty() + y - popup_height)
+            popup.geometry("+{}+{}".format(sx, sy))
+
+    def _dismiss_multi_popup(self):
+        if self._multi_completion_popup is not None:
+            try:
+                self._multi_completion_popup.destroy()
+            except Exception:
+                pass
+            self._multi_completion_popup = None
+        self._multi_options = []
+        try:
+            self.editor.unbind_all("<MouseWheel>")
+        except Exception:
+            pass
+
+    def _insert_selected_completion(self, suggestion, replacement_range, before_cursor):
+        if not suggestion:
+            return
+        text_widget = self._text_widget()
+        if text_widget.get("1.0", "insert") != before_cursor:
+            return
+        normalized = " ".join(suggestion.split())
+        if normalized:
+            self._recent_inline_suggestions.append(normalized)
+            self._recent_inline_suggestions = self._recent_inline_suggestions[-8:]
+        if replacement_range:
+            text_widget.delete(*replacement_range)
+            text_widget.insert(replacement_range[0], suggestion)
+            text_widget.mark_set(
+                "insert", "{} + {} chars".format(replacement_range[0], len(suggestion))
+            )
+        else:
+            self.editor.insert("insert", suggestion)
+        self.on_key_release()
+
+    def _show_completion_error(self, generation, message):
+        if generation == self._completion_generation - 1:
+            self.status_var.set("Complétion inline indisponible : {}".format(message))
+
+    @staticmethod
+    def _sanitize_suggestion(suggestion):
+        """Decode les entites HTML (&#39;, &amp;, &eacute; ...) en caracteres bruts UTF-8."""
+        if not suggestion:
+            return suggestion
+        cleaned = html.unescape(suggestion)
+        # Collapse any leftover numeric/named entities html.unescape missed
+        cleaned = re.sub(r"&#(\d+);", lambda m: chr(int(m.group(1))) if int(m.group(1)) < 0x110000 else m.group(0), cleaned)
+        cleaned = re.sub(r"&#x([0-9a-fA-F]+);", lambda m: chr(int(m.group(1), 16)) if int(m.group(1), 16) < 0x110000 else m.group(0), cleaned)
+        return cleaned
 
     @staticmethod
     def _normalize_inline_replacement(suggestion, current_line, language, replacement_mode):
@@ -1225,114 +1873,10 @@ class DevWindow(ctk.CTkToplevel):
                 return ""
         return suggestion
 
-    def _show_inline_completion(self, generation, expected_prefix, suggestion, replacement_range=None):
-        if generation != self._completion_generation or not self._inline_completion_is_enabled():
-            return
-        text_widget = self._text_widget()
-        if text_widget.get("1.0", "insert") != expected_prefix or self.focus_get() not in (self.editor, text_widget):
-            return
-        cursor_box = text_widget.bbox("insert")
-        if not cursor_box:
-            return
-        x, y, _, line_height = cursor_box
-        if self._inline_completion_label is None:
-            self._inline_completion_label = tk.Frame(
-                text_widget,
-                bg="#1f2937",
-                bd=1,
-                relief="solid",
-            )
-            self._inline_completion_text = tk.Label(
-                self._inline_completion_label,
-                fg="#d1d5db",
-                bg="#1f2937",
-                font=("Consolas", 11),
-                bd=0,
-                padx=8,
-                pady=6,
-                justify="left",
-                anchor="w",
-                wraplength=520,
-            )
-            self._inline_completion_text.pack(fill="x")
-            controls = tk.Frame(self._inline_completion_label, bg="#1f2937")
-            controls.pack(fill="x", padx=6, pady=(0, 5))
-            tk.Button(
-                controls,
-                text="✓",
-                command=self._accept_inline_completion,
-                fg="#ffffff",
-                bg="#16803c",
-                activebackground="#116b32",
-                activeforeground="#ffffff",
-                relief="flat",
-                width=3,
-                cursor="hand2",
-            ).pack(side="left", padx=(0, 5))
-            tk.Button(
-                controls,
-                text="×",
-                command=self._reject_inline_completion,
-                fg="#ffffff",
-                bg="#b83232",
-                activebackground="#982828",
-                activeforeground="#ffffff",
-                relief="flat",
-                width=3,
-                cursor="hand2",
-            ).pack(side="left")
-        self._inline_suggestion = suggestion
-        self._inline_replacement_range = replacement_range
-        self._inline_completion_text.configure(text=suggestion)
-        self._inline_completion_label.update_idletasks()
-        widget_width = max(1, text_widget.winfo_width())
-        widget_height = max(1, text_widget.winfo_height())
-        popup_width = min(540, max(280, widget_width - 20))
-        self._inline_completion_text.configure(wraplength=popup_width - 20)
-        self._inline_completion_label.configure(width=popup_width)
-        self._inline_completion_label.update_idletasks()
-        popup_height = self._inline_completion_label.winfo_reqheight()
-        x = min(max(4, x), max(4, widget_width - popup_width - 4))
-        y += line_height
-        if y + popup_height > widget_height:
-            y = max(4, cursor_box[1] - popup_height)
-        self._inline_completion_label.place(x=x, y=y, width=popup_width)
-
-    def _show_completion_error(self, generation, message):
-        if generation == self._completion_generation:
-            self.status_var.set("Complétion inline indisponible : {}".format(message))
-
-    def _accept_inline_completion(self):
-        if not self._inline_suggestion:
-            return
-        suggestion = self._inline_suggestion
-        replacement_range = self._inline_replacement_range
-        if not re.search(r"<[^>]+>|[{};=()]|^\s*(?:import|from|const|let|var|function|class|return|if|for|while)\b", suggestion):
-            normalized = " ".join(suggestion.split())
-            if normalized:
-                self._recent_inline_suggestions.append(normalized)
-                self._recent_inline_suggestions = self._recent_inline_suggestions[-8:]
-        self._invalidate_inline_completion()
-        if replacement_range:
-            text_widget = self._text_widget()
-            text_widget.delete(*replacement_range)
-            text_widget.insert(replacement_range[0], suggestion)
-            text_widget.mark_set(
-                "insert", "{} + {} chars".format(replacement_range[0], len(suggestion))
-            )
-        else:
-            self.editor.insert("insert", suggestion)
-        self.on_key_release()
-
-    def _reject_inline_completion(self):
-        if self._inline_suggestion:
-            self._invalidate_inline_completion()
-
     def _reject_inline_completion_key(self, event=None):
-        if self._inline_suggestion:
-            self._reject_inline_completion()
-            return "break"
-        return None
+        self._dismiss_multi_popup()
+        self._invalidate_inline_completion()
+        return "break"
 
     def _schedule_autosave(self):
         if self._autosave_job:
@@ -1387,11 +1931,79 @@ class DevWindow(ctk.CTkToplevel):
             messagebox.showerror("Erreur restauration", str(e))
 
     def on_tab(self, event=None):
-        if self._inline_suggestion:
-            self._accept_inline_completion()
-            return "break"
+        self._dismiss_multi_popup()
         self.editor.insert("insert", "    ")
         return "break"
+
+    def on_editor_return(self, event=None):
+        text_widget = self._text_widget()
+        if text_widget.tag_ranges("sel"):
+            text_widget.delete("sel.first", "sel.last")
+
+        line_start = text_widget.index("insert linestart")
+        line_end = text_widget.index("insert lineend")
+        current_line = text_widget.get(line_start, line_end)
+        before_cursor = text_widget.get(line_start, "insert")
+        after_cursor = text_widget.get("insert", line_end)
+        indent = self._automatic_indentation(
+            current_line,
+            before_cursor,
+            after_cursor,
+            LANG_EXTENSIONS.get(self.current_file.suffix.lower(), "text")
+            if self.current_file else "text",
+        )
+        text_widget.insert("insert", "\n" + indent)
+        self.on_key_release()
+        return "break"
+
+    @staticmethod
+    def _automatic_indentation(current_line, before_cursor, after_cursor, language):
+        indentation = re.match(r"^[ \t]*", current_line).group(0)
+        unit = "\t" if "\t" in indentation else "    "
+        stripped_before = before_cursor.rstrip()
+        stripped_after = after_cursor.lstrip()
+        if (
+            language == "html"
+            and re.match(r"^</\s*[A-Za-z][\w:-]*\s*>", stripped_after) is not None
+        ):
+            return indentation
+        dedent_before = (
+            re.match(r"^[}\])]", stripped_after) is not None
+            or re.fullmatch(r"[}\]]\s*;?", stripped_before.strip()) is not None
+            or (
+                language == "python"
+                and re.match(r"^(?:elif|else|except|finally|case)\b", stripped_after) is not None
+            )
+        )
+        if dedent_before:
+            return indentation[:-1] if indentation.endswith("\t") else indentation[:-4]
+
+        opens_block = stripped_before.endswith(("{", "[", "("))
+        if language == "python":
+            code_before_comment = stripped_before.split("#", 1)[0].rstrip()
+            opens_block = opens_block or (
+                code_before_comment.endswith(":")
+                and re.match(
+                    r"^(?:async\s+)?(?:def|class|if|elif|else|for|while|try|except|finally|with|match|case)\b",
+                    code_before_comment.lstrip(),
+                ) is not None
+            )
+        elif language == "html":
+            void_tags = {
+                "area", "base", "br", "col", "embed", "hr", "img", "input", "link",
+                "meta", "param", "source", "track", "wbr",
+            }
+            opening_tags = list(re.finditer(r"<\s*([A-Za-z][\w:-]*)\b[^>]*>", stripped_before))
+            opening_tag = re.search(r"<\s*([A-Za-z][\w:-]*)\b[^>]*>\s*$", stripped_before)
+            if opening_tag:
+                tag_name = opening_tag.group(1).lower()
+                opens_block = (
+                    tag_name not in void_tags
+                    and not opening_tag.group(0).rstrip().endswith("/>")
+                )
+        if opens_block:
+            return indentation + unit
+        return indentation
 
     def _schedule_highlight(self):
         if self._highlight_job:
@@ -1597,11 +2209,11 @@ class DevWindow(ctk.CTkToplevel):
             add_matches(r"\b([a-zA-Z-]+)=(\"[^\"]*\"|'[^']*')", "attr")
 
     def open_color_settings(self):
-        win = ctk.CTkToplevel(self)
+        win = ctk.CTkToplevel(self.winfo_toplevel())
         win.title("Couleurs du code - Calisto")
         win.geometry("500x540")
         win.configure(fg_color=BG_PANEL)
-        win.transient(self)
+        win.transient(self.winfo_toplevel())
         win.grab_set()
 
         ctk.CTkLabel(win, text="🎨 Personnaliser les couleurs de code", font=ctk.CTkFont(size=14, weight="bold"), text_color=ACCENT).pack(pady=15)
@@ -2725,6 +3337,3 @@ class DevWindow(ctk.CTkToplevel):
     def on_close(self):
         self._invalidate_inline_completion()
         self._save_session()
-        if self.parent_app.dev_window is self:
-            self.parent_app.dev_window = None
-        self.destroy()
