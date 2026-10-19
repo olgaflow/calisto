@@ -1,0 +1,15 @@
+# Local application data and conversation history
+activity.json
+memory.json
+conversations/
+generated/
+ia_creations/
+projects/
+
+# Generated and temporary files
+__pycache__/
+*.py[cod]
+*.pdf
+mon_script.py.txt
+preview.html
+.pytest_cache/
