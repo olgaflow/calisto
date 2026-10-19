@@ -440,6 +440,7 @@ class App(ctk.CTk):
         self.after(100, self._process_ui_queue)
         self.after(1000, self._tick_mode_timer)
         self.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.resizable(True, True)
 
     def _build_system_prompt(self, extra_context=""):
         """Construit le prompt système unique et cohérent pour l'IA."""
@@ -1370,6 +1371,7 @@ Comment puis-je vous aider aujourd'hui ?"""
         win.configure(fg_color=BG_APP)
         win.transient(self)
         win.grab_set()
+        win.resizable(True, True)
         ctk.CTkLabel(win, text="Nouvelle version disponible", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT).pack(pady=(20, 8))
         ctk.CTkLabel(win, text="Version actuelle : {}".format(VERSION), text_color=TEXT_MUTED).pack(pady=2)
         ctk.CTkLabel(win, text="Version disponible : {}".format(distant_version), text_color=TEXT_MAIN).pack(pady=2)
@@ -1387,6 +1389,7 @@ Comment puis-je vous aider aujourd'hui ?"""
         progress_win.configure(fg_color=BG_APP)
         progress_win.transient(self)
         progress_win.grab_set()
+        progress_win.resizable(True, True)
         ctk.CTkLabel(progress_win, text="Telechargement de la version {}".format(distant_version), font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_MAIN).pack(pady=(20, 10))
         status_var = ctk.StringVar(value="Preparation...")
         ctk.CTkLabel(progress_win, textvariable=status_var, text_color=TEXT_MUTED).pack(pady=4)
@@ -1435,6 +1438,7 @@ Comment puis-je vous aider aujourd'hui ?"""
         win.configure(fg_color=BG_APP)
         win.transient(self)
         win.grab_set()
+        win.resizable(True, True)
         ctk.CTkLabel(win, text="Paramètres", font=ctk.CTkFont(size=20, weight="bold"), text_color=TEXT_MAIN).pack(pady=(22, 18))
         body = ctk.CTkFrame(win, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=28, pady=8)
@@ -1556,6 +1560,7 @@ class LearningModeWindow:
         self.win.configure(fg_color=BG_APP)
         self.win.transient(parent_app)
         self.win.grab_set()
+        self.win.resizable(True, True)
 
         self.level = ctk.StringVar(value="junior")
         self.start_time = None
