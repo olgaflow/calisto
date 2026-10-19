@@ -1817,6 +1817,15 @@ class LearningModeWindow:
 
     def _verify(self):
         self._stop_timer()
+        # Verification cote client : reject si le contenu est vide ou quasi inchange par rapport au squelette par defaut
+        html_content = self.files.get("index.html", "")
+        default_html = "<!DOCTYPE html>\n<html>\n<head>\n    <title>Mon site</title>\n</head>\n<body>\n    <h1>Bonjour</h1>\n</body>\n</html>"
+        if not html_content.strip():
+            self.status_label.configure(text="Refuse : aucun code saisi. Ecrivez du HTML avant de verifier.", text_color="#c24141")
+            return
+        if self._is_default_skeleton(html_content):
+            self.status_label.configure(text="Refuse : le squelette par defaut n'est pas un site. Ajoutez du contenu reel.", text_color="#c24141")
+            return
         all_code = ""
         for fname, content in self.files.items():
             all_code += "\n--- FICHIER : {} ---\n{}\n--- FIN ---".format(fname, content)
@@ -1826,11 +1835,20 @@ class LearningModeWindow:
             "Tu es un examinateur sever. Voici le code d'un apprenant au niveau {} ({}).\n"
             "Tolerance aux erreurs : {}.\n"
             "Le but est de creer un site web propre et fonctionnel (HTML, CSS, JS).\n"
+            "Si le code est uniquement le squelette par defaut (DOCTYPE + titre + un h1 'Bonjour') sans contenu reel, reponds REFUSE.\n"
             "Reponds UNIQUEMENT par 'VALIDÉ' ou 'REFUSE' suivi d'une courte explication en francais.\n"
             "Ne donne pas de conseil pour corriger, dis seulement si c'est accepte ou non.\n\n{}".format(lv["label"], level, lv["tolerance"], all_code)
         )
         self.status_label.configure(text="Verification en cours...", text_color=TEXT_MAIN)
         threading.Thread(target=self._verify_thread, args=(verify_prompt,), daemon=True).start()
+
+    @staticmethod
+    def _is_default_skeleton(html):
+        default = "<!DOCTYPE html>\n<html>\n<head>\n    <title>Mon site</title>\n</head>\n<body>\n    <h1>Bonjour</h1>\n</body>\n</html>"
+        normal = " ".join(html.split())
+        norm_default = " ".join(default.split())
+        # Si le contenu normalise est identique ou ne contient pratiquement rien en plus
+        return normal == norm_default or len(normal) < len(norm_default) + 50
 
     def _verify_thread(self, prompt):
         try:
