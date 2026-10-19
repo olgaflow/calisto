@@ -408,6 +408,7 @@ class App(ctk.CTk):
         self.web_search_var = ctk.BooleanVar(value=False)
         self.inline_completion_var = ctk.BooleanVar(value=True)
         self.last_user_prompt = ""
+        self._learning_sujets = []
 
         self.mode_var = ctk.StringVar(value="aucun")
         self.mode_timer_running = False
@@ -1698,17 +1699,34 @@ class LearningModeWindow:
         """Demande a l'IA de generer un sujet de projet precis avec des consignes structurees."""
         level = self.level.get()
         lv = LEARNING_LEVELS[level]
+        # Historique des sujets deja proposes pour eviter les repetitions
+        sujets_deja = self.app._learning_sujets if hasattr(self.app, "_learning_sujets") else []
+        self.app._learning_sujets = sujets_deja
+        historique = ""
+        if sujets_deja:
+            historique = "SUJETS DEJA PROPOSES (NE PAS les reprendre) :\n- {}\n\n".format("\n- ".join(sujets_deja[-10:]))
+        difficulty_desc = {
+            "junior": "simple, une seule page, basique",
+            "facile": "une page avec quelques elements interactifs",
+            "normale": "plusieurs sections, mise en page soignee, un peu de JavaScript",
+            "difficile": "site multi-pages ou application web avec JavaScript significatif",
+            "legendaire": "application web complete ou site e-commerce complexe, logique JS avancee",
+            "senior": "projet professionnel complet avec architecture, design responsive et fonctionnalites avancees",
+        }[level]
         prompt = (
             "Tu es un formateur en developpement web. Genere UN sujet de projet precis et concrete pour un apprenant au niveau {} ({}).\n"
-            "Le sujet doit etre un type de site web (ex: portfolio, landing page, site de voyage, site e-commerce, blog, page de contact, CV en ligne, etc.).\n"
-            "Donne les consignes suivantes de maniere claire et structuree :\n"
-            "1. SUJET : le type exact de site a creer\n"
+            "IMPORTANT : varie le TYPE de site a chaque exercice. Ne propose PAS toujours un portfolio. Touche a tout : landing page, site de voyage, site e-commerce, blog, page de contact, CV en ligne, site restaurant, agence, page de formation, etc.\n"
+            "Le sujet doit correspondre a la difficulté {}. Difficulte actuelle : {} ({}).\n"
+            "Cela signifie : {}\n"
+            "La difficulté ne doit PAS seulement signifier 'plus de pages' : elle doit signifier un type de site different et/ou plus complexe.\n"
+            "{history}Donne les consignes suivantes de maniere claire et structuree :\n"
+            "1. SUJET : le type exact de site a creer (sois varie, pas de portfolio a chaque fois)\n"
             "2. OBJECTIF : ce que le site doit permettre a l'utilisateur de faire\n"
             "3. PAGES OU SECTIONS : les elements obligatoires a inclure\n"
             "4. EXIGENCES TECHNIQUES : ce qui est attendu en HTML/CSS/JS selon le niveau\n"
             "5. CRITERES DE REUSSITE : ce qui sera verifie pour valider le projet\n"
             "Sois precis, direct et donne un seul sujet (pas de liste au choix). Ecris en francais.\n\nNiveau : {} ({}) - Tolerance : {}".format(
-                lv["label"], level, lv["label"], level, lv["tolerance"]
+                lv["label"], level, level, lv["label"], difficulty_desc, historique, lv["label"], level, lv["tolerance"]
             )
         )
         try:
@@ -1716,9 +1734,12 @@ class LearningModeWindow:
             response = ollama.chat(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                options={"temperature": 0.5, "num_predict": 600},
+                options={"temperature": 0.7, "num_predict": 700},
             )
             sujet = response["message"]["content"]
+            # Extraire le titre du sujet pour l'historique (premiere ligne non vide)
+            first_line = [l for l in sujet.splitlines() if l.strip()][0] if sujet else "Sujet inconnu"
+            self.app._learning_sujets.append(first_line[:80])
             self.app.after(0, lambda: self._display_subject(sujet))
         except Exception as e:
             self.app.after(0, lambda: self.status_label.configure(text="Erreur generation sujet : {}".format(e), text_color="#c24141"))
