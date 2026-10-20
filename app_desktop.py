@@ -165,7 +165,7 @@ class App(ctk.CTk):
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         # Tabs
         self.tabs = ctk.CTkTabview(self, fg_color=BG_APP)
@@ -179,7 +179,7 @@ class App(ctk.CTk):
         self.learning_tab = self.tabs.tab("Apprentissage")
 
         self.chat_tab.grid_columnconfigure(0, weight=1)
-        self.chat_tab.grid_rowconfigure(0, weight=1)
+        self.chat_tab.grid_rowconfigure(1, weight=1)
 
         # Header
         header = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, height=50, corner_radius=0)
