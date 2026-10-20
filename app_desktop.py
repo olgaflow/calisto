@@ -183,9 +183,8 @@ class App(ctk.CTk):
         self.chat_tab.grid_rowconfigure(1, weight=1)
 
         # Header
-        header = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, height=36, corner_radius=0)
+        header = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, corner_radius=0)
         header.grid(row=0, column=0, sticky="ew")
-        header.grid_propagate(False)
 
         ctk.CTkLabel(header, text="💬 Discussion", font=ctk.CTkFont(size=16, weight="bold"), text_color=TEXT_MAIN).pack(side="left", padx=12, pady=6)
 
