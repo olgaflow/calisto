@@ -376,8 +376,8 @@ class DevWindow(ctk.CTkFrame):
         ctk.CTkButton(btn_frame, text="🎨 Réglages couleurs", width=110, command=self.open_color_settings, fg_color="#6b7280", hover_color="#4b5563").pack(side="right", padx=3, pady=2)
 
         # Sidebar explorateur
-        self.explorer = ctk.CTkFrame(self, width=320, fg_color=BG_PANEL, corner_radius=0)
-        self.explorer.grid(row=1, column=0, sticky="nsew")
+        self.explorer = ctk.CTkFrame(self, width=300, fg_color="#252526", corner_radius=0, border_width=2, border_color="#333336")
+        self.explorer.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
         self.explorer.grid_propagate(False)
 
         ctk.CTkLabel(self.explorer, text="📂 Explorateur", font=ctk.CTkFont(size=14, weight="bold"), text_color=ACCENT).pack(pady=(15, 8), padx=12, anchor="w")
@@ -396,17 +396,18 @@ class DevWindow(ctk.CTkFrame):
         self.proj_menu.pack(padx=8, pady=(0, 8), fill="x")
 
         # Zone principale
-        self.main_area = ctk.CTkFrame(self, fg_color=BG_APP, corner_radius=0)
-        self.main_area.grid(row=1, column=1, sticky="nsew")
+        self.main_area = ctk.CTkFrame(self, fg_color="#1a1a1b", corner_radius=0, border_width=2, border_color="#333336")
+        self.main_area.grid(row=1, column=1, sticky="nsew", padx=2, pady=2)
         self.main_area.grid_columnconfigure(0, weight=2)
         self.main_area.grid_columnconfigure(1, weight=1)
         self.main_area.grid_rowconfigure(0, weight=1)
 
         # Éditeur
-        self.editor_frame = ctk.CTkFrame(self.main_area, fg_color=BG_EDITOR, corner_radius=0)
-        self.editor_frame.grid(row=0, column=0, sticky="nsew")
+        self.editor_frame = ctk.CTkFrame(self.main_area, fg_color=BG_EDITOR, corner_radius=0, border_width=2, border_color="#333336")
+        self.editor_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
         self.editor_frame.grid_columnconfigure(1, weight=1)
         self.editor_frame.grid_rowconfigure(1, weight=1)
+        self.editor_frame.grid_rowconfigure(2, weight=0)
 
         editor_header = ctk.CTkFrame(self.editor_frame, fg_color="#2a2a2e", height=26, corner_radius=0)
         editor_header.grid(row=0, column=0, columnspan=2, sticky="ew")
@@ -437,9 +438,13 @@ class DevWindow(ctk.CTkFrame):
         )
         self.line_numbers.grid(row=1, column=0, sticky="ns", padx=(5, 0), pady=5)
         self.line_numbers.bind("<Configure>", self._queue_line_number_redraw)
-        self.editor = ctk.CTkTextbox(self.editor_frame, font=ctk.CTkFont(family="Consolas", size=13), fg_color=BG_EDITOR, text_color=TEXT_MAIN, border_width=0)
+        self.editor = ctk.CTkTextbox(self.editor_frame, font=ctk.CTkFont(family="Consolas", size=13), fg_color=BG_EDITOR, text_color=TEXT_MAIN, border_width=0, wrap="none")
         self.editor.grid(row=1, column=1, sticky="nsew", padx=(0, 5), pady=5)
         self._text_widget().configure(yscrollcommand=self._on_editor_scroll)
+        # Horizontal scrollbar pour deplacer de gauche a droite
+        self.editor_xscroll = tk.Scrollbar(self.editor_frame, orient="horizontal", command=self._text_widget().xview)
+        self.editor_xscroll.grid(row=2, column=1, sticky="ew", padx=(0, 5))
+        self._text_widget().configure(xscrollcommand=self.editor_xscroll.set)
         self._text_widget().bind("<<Modified>>", self._on_editor_modified, add="+")
         self._text_widget().bind("<Configure>", self._queue_line_number_redraw, add="+")
         self.editor.bind("<KeyRelease>", self.on_key_release)
@@ -458,8 +463,8 @@ class DevWindow(ctk.CTkFrame):
         self.editor.bind("<KeyRelease>", self._update_status_line_col, add="+")
 
         # Panneau droit : onglets prévisualisation / IA
-        self.right_panel = ctk.CTkFrame(self.main_area, fg_color=BG_PANEL, corner_radius=0)
-        self.right_panel.grid(row=0, column=1, sticky="nsew")
+        self.right_panel = ctk.CTkFrame(self.main_area, fg_color="#2a2a2e", corner_radius=0, border_width=2, border_color="#333336")
+        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
         self.right_panel.grid_columnconfigure(0, weight=1)
         self.right_panel.grid_rowconfigure(1, weight=1)
 
