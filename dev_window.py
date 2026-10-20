@@ -351,29 +351,29 @@ class DevWindow(ctk.CTkFrame):
         self.grid_rowconfigure(1, weight=1)
 
         # Header
-        header = ctk.CTkFrame(self, fg_color=BG_PANEL, height=50, corner_radius=0)
+        header = ctk.CTkFrame(self, fg_color=BG_PANEL, height=36, corner_radius=0)
         header.grid(row=0, column=0, columnspan=2, sticky="ew")
         header.grid_propagate(False)
 
-        ctk.CTkLabel(header, text="💻 Calisto Développement", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT).pack(side="left", padx=15, pady=10)
+        ctk.CTkLabel(header, text="💻 Calisto Développement", font=ctk.CTkFont(size=14, weight="bold"), text_color=ACCENT).pack(side="left", padx=12, pady=6)
 
         btn_frame = ctk.CTkFrame(header, fg_color="transparent")
-        btn_frame.pack(side="right", padx=15, pady=8)
+        btn_frame.pack(side="right", padx=10, pady=4)
         self.maximize_button = ctk.CTkButton(
             btn_frame,
             text="⛶ Agrandir",
-            width=86,
+            width=80,
             command=self.toggle_maximize,
             fg_color="#6b7280",
             hover_color="#4b5563",
         )
-        self.maximize_button.pack(side="right", padx=4, pady=4)
-        ctk.CTkButton(btn_frame, text="📁 Ouvrir dossier", width=110, command=self.open_folder, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=4, pady=4)
-        ctk.CTkButton(btn_frame, text="📄 Nouveau fichier", width=110, command=self.new_file, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=4, pady=4)
-        ctk.CTkButton(btn_frame, text="🗑️ Supprimer", width=100, command=self.delete_selected, fg_color="#c24141", hover_color="#a33434").pack(side="right", padx=4, pady=4)
-        ctk.CTkButton(btn_frame, text="💾 Enregistrer", width=100, command=self.save_file, fg_color=ACCENT, hover_color=ACCENT_HOVER).pack(side="right", padx=4, pady=4)
-        ctk.CTkButton(btn_frame, text="🌐 Prévisualiser", width=110, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5").pack(side="right", padx=4, pady=4)
-        ctk.CTkButton(btn_frame, text="🎨 Réglages couleurs", width=120, command=self.open_color_settings, fg_color="#6b7280", hover_color="#4b5563").pack(side="right", padx=4, pady=4)
+        self.maximize_button.pack(side="right", padx=3, pady=2)
+        ctk.CTkButton(btn_frame, text="📁 Ouvrir dossier", width=100, command=self.open_folder, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=3, pady=2)
+        ctk.CTkButton(btn_frame, text="📄 Nouveau fichier", width=100, command=self.new_file, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=3, pady=2)
+        ctk.CTkButton(btn_frame, text="🗑️ Supprimer", width=90, command=self.delete_selected, fg_color="#c24141", hover_color="#a33434").pack(side="right", padx=3, pady=2)
+        ctk.CTkButton(btn_frame, text="💾 Enregistrer", width=90, command=self.save_file, fg_color=ACCENT, hover_color=ACCENT_HOVER).pack(side="right", padx=3, pady=2)
+        ctk.CTkButton(btn_frame, text="🌐 Prévisualiser", width=100, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5").pack(side="right", padx=3, pady=2)
+        ctk.CTkButton(btn_frame, text="🎨 Réglages couleurs", width=110, command=self.open_color_settings, fg_color="#6b7280", hover_color="#4b5563").pack(side="right", padx=3, pady=2)
 
         # Sidebar explorateur
         self.explorer = ctk.CTkFrame(self, width=320, fg_color=BG_PANEL, corner_radius=0)
@@ -408,18 +408,17 @@ class DevWindow(ctk.CTkFrame):
         self.editor_frame.grid_columnconfigure(1, weight=1)
         self.editor_frame.grid_rowconfigure(1, weight=1)
 
-        editor_header = ctk.CTkFrame(self.editor_frame, fg_color="#2a2a2e", height=30, corner_radius=0)
+        editor_header = ctk.CTkFrame(self.editor_frame, fg_color="#2a2a2e", height=26, corner_radius=0)
         editor_header.grid(row=0, column=0, columnspan=2, sticky="ew")
         editor_header.grid_propagate(False)
         self.file_name_label = ctk.CTkLabel(editor_header, text="Aucun fichier", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
-        self.file_name_label.pack(side="left", padx=10, pady=5)
+        self.file_name_label.pack(side="left", padx=10, pady=4)
         self.lang_label = ctk.CTkLabel(editor_header, text="", font=ctk.CTkFont(size=10), text_color=TEXT_MUTED)
-        self.lang_label.pack(side="right", padx=10, pady=5)
+        self.lang_label.pack(side="right", padx=10, pady=4)
 
-        # Boutons rapides dans l'editeur (largeur limitee pour eviter l'etalement)
-        editor_quick = ctk.CTkFrame(editor_header, fg_color="transparent", width=700)
-        editor_quick.pack(side="right", padx=8, pady=4)
-        editor_quick.pack_propagate(False)
+        # Boutons rapides dans l'editeur (largeur adaptee au contenu)
+        editor_quick = ctk.CTkFrame(editor_header, fg_color="transparent")
+        editor_quick.pack(side="right", padx=8, pady=2)
         ctk.CTkButton(editor_quick, text="↩ Annuler modifs", width=95, command=self.restore_from_disk, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
         ctk.CTkButton(editor_quick, text="💾 Auto-save: ON", width=85, command=self.toggle_autosave, fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
         ctk.CTkButton(editor_quick, text="🌐 Navigateur", width=85, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)

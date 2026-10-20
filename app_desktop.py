@@ -183,16 +183,16 @@ class App(ctk.CTk):
         self.chat_tab.grid_rowconfigure(1, weight=1)
 
         # Header
-        header = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, height=50, corner_radius=0)
+        header = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, height=36, corner_radius=0)
         header.grid(row=0, column=0, sticky="ew")
         header.grid_propagate(False)
 
-        ctk.CTkLabel(header, text="💬 Discussion", font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_MAIN).pack(side="left", padx=15, pady=10)
+        ctk.CTkLabel(header, text="💬 Discussion", font=ctk.CTkFont(size=16, weight="bold"), text_color=TEXT_MAIN).pack(side="left", padx=12, pady=6)
 
         right_btns = ctk.CTkFrame(header, fg_color="transparent")
-        right_btns.pack(side="right", padx=15, pady=5)
-        ctk.CTkButton(right_btns, text="⚙️ Réglages", width=100, command=self.open_settings, fg_color="#a855f7", hover_color="#9333ea", font=ctk.CTkFont(size=12)).pack(side="right", padx=4)
-        ctk.CTkButton(right_btns, text="📎 Fichier", width=90, command=self.attach_file, fg_color=BG_INPUT, hover_color="#4b4c54", font=ctk.CTkFont(size=11)).pack(side="right", padx=4)
+        right_btns.pack(side="right", padx=10, pady=4)
+        ctk.CTkButton(right_btns, text="⚙️ Réglages", width=95, command=self.open_settings, fg_color="#a855f7", hover_color="#9333ea", font=ctk.CTkFont(size=11)).pack(side="right", padx=3)
+        ctk.CTkButton(right_btns, text="📎 Fichier", width=85, command=self.attach_file, fg_color=BG_INPUT, hover_color="#4b4c54", font=ctk.CTkFont(size=11)).pack(side="right", padx=3)
 
         # Chat area
         self.chat_container = ctk.CTkScrollableFrame(self.chat_tab, fg_color=BG_APP)
