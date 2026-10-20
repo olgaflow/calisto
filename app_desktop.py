@@ -136,7 +136,8 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Calisto - Assistant IA pour débutants")
-        self.geometry("1100x750")
+        self.geometry("1200x800")
+        self.minsize(900, 600)
         self.configure(fg_color=BG_APP)
         self.resizable(True, True)
 

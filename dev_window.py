@@ -345,12 +345,14 @@ class DevWindow(ctk.CTkFrame):
             index = next_index
 
     def _build_ui(self):
+        self.grid_columnconfigure(0, weight=0, minsize=300)
         self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=0)
         self.grid_rowconfigure(1, weight=1)
 
         # Header
         header = ctk.CTkFrame(self, fg_color=BG_PANEL, height=50, corner_radius=0)
-        header.grid(row=0, column=0, columnspan=3, sticky="ew")
+        header.grid(row=0, column=0, columnspan=2, sticky="ew")
         header.grid_propagate(False)
 
         ctk.CTkLabel(header, text="💻 Calisto Développement", font=ctk.CTkFont(size=16, weight="bold"), text_color=ACCENT).pack(side="left", padx=15, pady=10)
@@ -395,7 +397,7 @@ class DevWindow(ctk.CTkFrame):
 
         # Zone principale
         self.main_area = ctk.CTkFrame(self, fg_color=BG_APP, corner_radius=0)
-        self.main_area.grid(row=1, column=1, columnspan=2, sticky="nsew")
+        self.main_area.grid(row=1, column=1, sticky="nsew")
         self.main_area.grid_columnconfigure(0, weight=2)
         self.main_area.grid_columnconfigure(1, weight=1)
         self.main_area.grid_rowconfigure(0, weight=1)
@@ -414,17 +416,18 @@ class DevWindow(ctk.CTkFrame):
         self.lang_label = ctk.CTkLabel(editor_header, text="", font=ctk.CTkFont(size=10), text_color=TEXT_MUTED)
         self.lang_label.pack(side="right", padx=10, pady=5)
 
-        # Boutons rapides dans l'editeur
-        editor_quick = ctk.CTkFrame(editor_header, fg_color="transparent")
+        # Boutons rapides dans l'editeur (largeur limitee pour eviter l'etalement)
+        editor_quick = ctk.CTkFrame(editor_header, fg_color="transparent", width=700)
         editor_quick.pack(side="right", padx=8, pady=4)
-        ctk.CTkButton(editor_quick, text="↩ Annuler modifs", width=100, command=self.restore_from_disk, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="💾 Auto-save: ON", width=90, command=self.toggle_autosave, fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="🌐 Navigateur", width=90, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="✨ Formater", width=85, command=self.format_code, fg_color="#9333ea", hover_color="#7e22ce", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="🔍 Rechercher (Ctrl+F)", width=105, command=self._show_find_replace, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="📍 Ligne (Ctrl+G)", width=100, command=self._goto_line, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="💬 Commenter (Ctrl+/)", width=105, command=self._toggle_comment, fg_color="#a855f7", hover_color="#9333ea", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="📄 Retour ligne", width=90, command=self._toggle_word_wrap, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=3)
+        editor_quick.pack_propagate(False)
+        ctk.CTkButton(editor_quick, text="↩ Annuler modifs", width=95, command=self.restore_from_disk, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
+        ctk.CTkButton(editor_quick, text="💾 Auto-save: ON", width=85, command=self.toggle_autosave, fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
+        ctk.CTkButton(editor_quick, text="🌐 Navigateur", width=85, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
+        ctk.CTkButton(editor_quick, text="✨ Formater", width=80, command=self.format_code, fg_color="#9333ea", hover_color="#7e22ce", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
+        ctk.CTkButton(editor_quick, text="🔍 Rechercher", width=80, command=self._show_find_replace, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
+        ctk.CTkButton(editor_quick, text="📍 Ligne", width=65, command=self._goto_line, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
+        ctk.CTkButton(editor_quick, text="💬 Commenter", width=80, command=self._toggle_comment, fg_color="#a855f7", hover_color="#9333ea", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
+        ctk.CTkButton(editor_quick, text="📄 Retour ligne", width=85, command=self._toggle_word_wrap, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=10, weight="bold")).pack(side="left", padx=2)
 
         self.line_numbers = tk.Canvas(
             self.editor_frame,
@@ -476,9 +479,11 @@ class DevWindow(ctk.CTkFrame):
         self.tab_content.grid(row=1, column=0, sticky="nsew")
         self.tab_content.grid_columnconfigure(0, weight=1)
         self.tab_content.grid_rowconfigure(0, weight=1)
+        self.tab_content.grid_rowconfigure(1, weight=0)
 
         # Contenu Prévisualisation (temps réel)
         self.preview_frame = ctk.CTkFrame(self.tab_content, fg_color="#0d1117", corner_radius=0)
+        self.preview_frame.grid(row=0, column=0, sticky="nsew")
         if HtmlFrame is not None:
             self.preview = HtmlFrame(self.preview_frame, messages_enabled=False)
             self.preview.pack(fill="both", expand=True)
@@ -491,6 +496,7 @@ class DevWindow(ctk.CTkFrame):
                 border_width=0,
                 wrap="word",
             )
+            self.preview.pack(fill="both", expand=True)
             self.preview.insert(
                 "1.0",
                 "L'aperçu intégré nécessite tkinterweb. Fermez puis relancez l'application "
@@ -499,6 +505,7 @@ class DevWindow(ctk.CTkFrame):
             self.preview.configure(state="disabled")
 
         self.preview_bar = ctk.CTkFrame(self.tab_content, fg_color="#161b22", corner_radius=0)
+        self.preview_bar.grid(row=1, column=0, sticky="ew")
         self.preview_bar.grid_columnconfigure(0, weight=1)
         self.preview_open_btn = ctk.CTkButton(self.preview_bar, text="🌐 OUVRIR DANS LE NAVIGATEUR (page rendue)", command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=12, weight="bold"), height=40)
         self.preview_open_btn.pack(padx=12, pady=10)
@@ -560,7 +567,7 @@ class DevWindow(ctk.CTkFrame):
         # Barre d'état
         self.status_var = ctk.StringVar(value="Prêt")
         status_bar = ctk.CTkFrame(self, fg_color=BG_PANEL, height=28, corner_radius=0)
-        status_bar.grid(row=2, column=0, columnspan=3, sticky="ew")
+        status_bar.grid(row=2, column=0, columnspan=2, sticky="ew")
         status_bar.grid_propagate(False)
         ctk.CTkLabel(status_bar, textvariable=self.status_var, font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(side="left", padx=12, pady=4)
 
@@ -574,15 +581,15 @@ class DevWindow(ctk.CTkFrame):
         if name == "preview":
             self.tab_preview.configure(fg_color="#2a2a2e", text_color=TEXT_MAIN, font=ctk.CTkFont(size=12))
             self.tab_ia.configure(fg_color="#2a2a3e", text_color="#ffffff", font=ctk.CTkFont(size=12, weight="bold"))
-            self.preview_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
-            self.preview_bar.place(relx=0, rely=1.0, relwidth=1, anchor="sw", y=-4)
-            self.ia_panel.place_forget()
+            self.preview_frame.grid(row=0, column=0, sticky="nsew")
+            self.preview_bar.grid(row=1, column=0, sticky="ew")
+            self.ia_panel.grid_remove()
         else:
             self.tab_ia.configure(fg_color="#2a2a2e", text_color=TEXT_MAIN, font=ctk.CTkFont(size=12))
             self.tab_preview.configure(fg_color="#2a2a3e", text_color="#ffffff", font=ctk.CTkFont(size=12, weight="bold"))
-            self.ia_panel.place(relx=0, rely=0, relwidth=1, relheight=1)
-            self.preview_frame.place_forget()
-            self.preview_bar.place_forget()
+            self.ia_panel.grid(row=0, column=0, sticky="nsew")
+            self.preview_frame.grid_remove()
+            self.preview_bar.grid_remove()
 
     # ---------- Session persistante ----------
 
