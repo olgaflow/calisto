@@ -345,45 +345,50 @@ class DevWindow(ctk.CTkFrame):
             index = next_index
 
     def _build_ui(self):
-        self.grid_columnconfigure(0, weight=1, minsize=250)
-        self.grid_columnconfigure(1, weight=2, minsize=400)
-        self.grid_rowconfigure(0, weight=0)
-        self.grid_rowconfigure(1, weight=1)
+        # ========== LAYOUT PRINCIPAL : 3 colonnes distinctes et etirables ==========
+        self.grid_columnconfigure(0, weight=0, minsize=260)   # Explorateur (fixe mais etirable)
+        self.grid_columnconfigure(1, weight=2, minsize=500)   # Code (etirable, prioritaire)
+        self.grid_columnconfigure(2, weight=1, minsize=300)   # Previsualisation / IA (etirable)
+        self.grid_rowconfigure(0, weight=0)                   # Header (hauteur fixe)
+        self.grid_rowconfigure(1, weight=1)                   # Contenu (remplit tout l'espace)
+        self.grid_rowconfigure(2, weight=0)                   # Barre d'etat (hauteur fixe)
 
-        # Header
+        # ========== HEADER (ligne 0, pleine largeur) ==========
         header = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0)
-        header.grid(row=0, column=0, columnspan=2, sticky="ew")
+        header.grid(row=0, column=0, columnspan=3, sticky="ew")
+        header.grid_propagate(False)
+        header.configure(height=40)
 
         header_left = ctk.CTkFrame(header, fg_color="transparent")
-        header_left.pack(side="left", fill="y", padx=12, pady=4)
+        header_left.pack(side="left", fill="y", padx=12, pady=6)
         ctk.CTkLabel(header_left, text="💻 Calisto Développement", font=ctk.CTkFont(size=14, weight="bold"), text_color=ACCENT).pack(side="left")
 
         header_right = ctk.CTkFrame(header, fg_color="transparent")
-        header_right.pack(side="right", padx=10, pady=4)
+        header_right.pack(side="right", padx=12, pady=4)
         self.maximize_button = ctk.CTkButton(
             header_right,
             text="⛶ Agrandir",
-            width=90,
+            width=95,
             command=self.toggle_maximize,
             fg_color="#6b7280",
             hover_color="#4b5563",
         )
-        self.maximize_button.pack(side="right", padx=4, pady=2)
-        ctk.CTkButton(header_right, text="📁 Ouvrir dossier", width=105, command=self.open_folder, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=4, pady=2)
-        ctk.CTkButton(header_right, text="📄 Nouveau fichier", width=105, command=self.new_file, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=4, pady=2)
-        ctk.CTkButton(header_right, text="🗑️ Supprimer", width=95, command=self.delete_selected, fg_color="#c24141", hover_color="#a33434").pack(side="right", padx=4, pady=2)
-        ctk.CTkButton(header_right, text="💾 Enregistrer", width=95, command=self.save_file, fg_color=ACCENT, hover_color=ACCENT_HOVER).pack(side="right", padx=4, pady=2)
-        ctk.CTkButton(header_right, text="🌐 Prévisualiser", width=105, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5").pack(side="right", padx=4, pady=2)
-        ctk.CTkButton(header_right, text="🎨 Réglages couleurs", width=115, command=self.open_color_settings, fg_color="#6b7280", hover_color="#4b5563").pack(side="right", padx=4, pady=2)
+        self.maximize_button.pack(side="right", padx=6, pady=2)
+        ctk.CTkButton(header_right, text="📁 Ouvrir dossier", width=110, command=self.open_folder, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=6, pady=2)
+        ctk.CTkButton(header_right, text="📄 Nouveau fichier", width=110, command=self.new_file, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=6, pady=2)
+        ctk.CTkButton(header_right, text="🗑️ Supprimer", width=100, command=self.delete_selected, fg_color="#c24141", hover_color="#a33434").pack(side="right", padx=6, pady=2)
+        ctk.CTkButton(header_right, text="💾 Enregistrer", width=100, command=self.save_file, fg_color=ACCENT, hover_color=ACCENT_HOVER).pack(side="right", padx=6, pady=2)
+        ctk.CTkButton(header_right, text="🌐 Prévisualiser", width=110, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5").pack(side="right", padx=6, pady=2)
+        ctk.CTkButton(header_right, text="🎨 Réglages couleurs", width=120, command=self.open_color_settings, fg_color="#6b7280", hover_color="#4b5563").pack(side="right", padx=6, pady=2)
 
-        # Sidebar explorateur
-        self.explorer = ctk.CTkFrame(self, width=300, fg_color="#252526", corner_radius=0, border_width=2, border_color="#333336")
-        self.explorer.grid(row=1, column=0, sticky="nsew", padx=2, pady=2)
+        # ========== COLONNE 0 : EXPLORATEUR (ligne 1) ==========
+        self.explorer = ctk.CTkFrame(self, width=260, fg_color="#252526", corner_radius=0, border_width=3, border_color="#44444a")
+        self.explorer.grid(row=1, column=0, sticky="nsew", padx=3, pady=3)
         self.explorer.grid_propagate(False)
 
-        ctk.CTkLabel(self.explorer, text="📂 Explorateur", font=ctk.CTkFont(size=14, weight="bold"), text_color=ACCENT).pack(pady=(15, 8), padx=12, anchor="w")
+        ctk.CTkLabel(self.explorer, text="📂 Explorateur", font=ctk.CTkFont(size=15, weight="bold"), text_color=ACCENT).pack(pady=(12, 8), padx=12, anchor="w")
 
-        self.tree_frame = ctk.CTkScrollableFrame(self.explorer, fg_color="transparent")
+        self.tree_frame = ctk.CTkScrollableFrame(self.explorer, fg_color="#1a1a1b")
         self.tree_frame.pack(fill="both", expand=True, padx=8, pady=(0, 10))
 
         self.folder_label = ctk.CTkLabel(self.explorer, text="Aucun dossier ouvert", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
@@ -396,16 +401,16 @@ class DevWindow(ctk.CTkFrame):
         self.proj_menu = ctk.CTkOptionMenu(self.proj_frame, variable=self.proj_var, values=["Aucun"], command=self.load_project_version, fg_color="#2a2a3e", button_color=ACCENT, button_hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=11))
         self.proj_menu.pack(padx=8, pady=(0, 8), fill="x")
 
-        # Zone principale
-        self.main_area = ctk.CTkFrame(self, fg_color="#1a1a1b", corner_radius=0, border_width=2, border_color="#333336")
-        self.main_area.grid(row=1, column=1, sticky="nsew", padx=2, pady=2)
-        self.main_area.grid_columnconfigure(0, weight=2)
-        self.main_area.grid_columnconfigure(1, weight=1)
+        # ========== COLONNES 1+2 : ZONE PRINCIPALE (ligne 1) ==========
+        self.main_area = ctk.CTkFrame(self, fg_color="#1a1a1b", corner_radius=0, border_width=3, border_color="#44444a")
+        self.main_area.grid(row=1, column=1, columnspan=2, sticky="nsew", padx=3, pady=3)
+        self.main_area.grid_columnconfigure(0, weight=2)   # Editeur (2/3 de l'espace)
+        self.main_area.grid_columnconfigure(1, weight=1)   # Previsualisation/IA (1/3 de l'espace)
         self.main_area.grid_rowconfigure(0, weight=1)
 
-        # Éditeur
-        self.editor_frame = ctk.CTkFrame(self.main_area, fg_color=BG_EDITOR, corner_radius=0, border_width=2, border_color="#333336")
-        self.editor_frame.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
+        # ========== EDITEUR (colonne 1 de main_area) ==========
+        self.editor_frame = ctk.CTkFrame(self.main_area, fg_color=BG_EDITOR, corner_radius=0, border_width=2, border_color="#44444a")
+        self.editor_frame.grid(row=0, column=0, sticky="nsew", padx=3, pady=3)
         self.editor_frame.grid_columnconfigure(1, weight=1)
         self.editor_frame.grid_rowconfigure(1, weight=1)
         self.editor_frame.grid_rowconfigure(2, weight=0)
@@ -413,27 +418,25 @@ class DevWindow(ctk.CTkFrame):
         editor_header = ctk.CTkFrame(self.editor_frame, fg_color="#2a2a2e", corner_radius=0)
         editor_header.grid(row=0, column=0, columnspan=2, sticky="ew")
 
-        # Gauche : nom du fichier
         editor_left = ctk.CTkFrame(editor_header, fg_color="transparent")
-        editor_left.pack(side="left", fill="y", padx=10, pady=4)
+        editor_left.pack(side="left", fill="y", padx=12, pady=5)
         self.file_name_label = ctk.CTkLabel(editor_left, text="Aucun fichier", font=ctk.CTkFont(size=11), text_color=TEXT_MUTED)
         self.file_name_label.pack(side="left")
         self.lang_label = ctk.CTkLabel(editor_left, text="", font=ctk.CTkFont(size=10), text_color=TEXT_MUTED)
         self.lang_label.pack(side="left", padx=(8, 0))
 
-        # Boutons rapides dans l'editeur (centre-droit, styles propres, pas de compression)
         editor_quick = ctk.CTkFrame(editor_header, fg_color="transparent")
-        editor_quick.pack(side="right", padx=8, pady=4)
+        editor_quick.pack(side="right", padx=12, pady=5)
 
-        btn_style = {"font": ctk.CTkFont(size=10, weight="bold"), "width": 88, "height": 26, "corner_radius": 6}
-        ctk.CTkButton(editor_quick, text="📄 Nouveau", command=self.new_file, fg_color=BG_EDITOR, hover_color="#2a2a3e", **btn_style).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="💾 Enregistrer", command=self.save_file, fg_color=ACCENT, hover_color=ACCENT_HOVER, **btn_style).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="🌐 Navigateur", command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5", **btn_style).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="✨ Formater", command=self.format_code, fg_color="#9333ea", hover_color="#7e22ce", **btn_style).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="🔍 Rechercher", command=self._show_find_replace, fg_color="#6366f1", hover_color="#4f46e5", **btn_style).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="📍 Ligne", command=self._goto_line, fg_color="#6b7280", hover_color="#4b5563", **btn_style).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="💬 Commenter", command=self._toggle_comment, fg_color="#a855f7", hover_color="#9333ea", **btn_style).pack(side="left", padx=3)
-        ctk.CTkButton(editor_quick, text="📄 Retour ligne", command=self._toggle_word_wrap, fg_color="#6b7280", hover_color="#4b5563", **btn_style).pack(side="left", padx=3)
+        btn_style = {"font": ctk.CTkFont(size=10, weight="bold"), "width": 92, "height": 28, "corner_radius": 6}
+        ctk.CTkButton(editor_quick, text="📄 Nouveau", command=self.new_file, fg_color=BG_EDITOR, hover_color="#2a2a3e", **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="💾 Enregistrer", command=self.save_file, fg_color=ACCENT, hover_color=ACCENT_HOVER, **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="🌐 Navigateur", command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5", **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="✨ Formater", command=self.format_code, fg_color="#9333ea", hover_color="#7e22ce", **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="🔍 Rechercher", command=self._show_find_replace, fg_color="#6366f1", hover_color="#4f46e5", **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="📍 Ligne", command=self._goto_line, fg_color="#6b7280", hover_color="#4b5563", **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="💬 Commenter", command=self._toggle_comment, fg_color="#a855f7", hover_color="#9333ea", **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="📄 Retour ligne", command=self._toggle_word_wrap, fg_color="#6b7280", hover_color="#4b5563", **btn_style).pack(side="left", padx=4)
 
         self.line_numbers = tk.Canvas(
             self.editor_frame,
@@ -469,21 +472,21 @@ class DevWindow(ctk.CTkFrame):
         self.editor.bind("<KeyRelease>", self._update_status_line_col, add="+")
 
         # Panneau droit : onglets prévisualisation / IA
-        self.right_panel = ctk.CTkFrame(self.main_area, fg_color="#2a2a2e", corner_radius=0, border_width=2, border_color="#333336")
-        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
+        self.right_panel = ctk.CTkFrame(self.main_area, fg_color="#2a2a2e", corner_radius=0, border_width=2, border_color="#44444a")
+        self.right_panel.grid(row=0, column=1, sticky="nsew", padx=3, pady=3)
         self.right_panel.grid_columnconfigure(0, weight=1)
         self.right_panel.grid_rowconfigure(1, weight=1)
 
-        self.tab_frame = ctk.CTkFrame(self.right_panel, fg_color="#2a2a2e", height=32, corner_radius=0)
+        self.tab_frame = ctk.CTkFrame(self.right_panel, fg_color="#2a2a2e", corner_radius=0)
         self.tab_frame.grid(row=0, column=0, sticky="ew")
         self.tab_frame.grid_propagate(False)
         self.tab_frame.grid_columnconfigure(0, weight=1)
         self.tab_frame.grid_columnconfigure(1, weight=1)
 
-        self.tab_preview = ctk.CTkButton(self.tab_frame, text="🌐 Prévisualisation (temps réel)", fg_color="transparent", text_color=TEXT_MAIN, hover_color="#3a3a3e", command=lambda: self.switch_tab("preview"), font=ctk.CTkFont(size=12))
-        self.tab_preview.grid(row=0, column=0, sticky="nsew")
+        self.tab_preview = ctk.CTkButton(self.tab_frame, text="🌐 Prévisualisation (temps réel)", fg_color="transparent", text_color=TEXT_MAIN, hover_color="#3a3a3e", command=lambda: self.switch_tab("preview"), font=ctk.CTkFont(size=12, weight="bold"))
+        self.tab_preview.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
         self.tab_ia = ctk.CTkButton(self.tab_frame, text="🤖 Assistant IA", fg_color="#2a2a3e", text_color="#ffffff", hover_color="#3a3a3e", command=lambda: self.switch_tab("ia"), font=ctk.CTkFont(size=12, weight="bold"))
-        self.tab_ia.grid(row=0, column=1, sticky="nsew")
+        self.tab_ia.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
 
         self.tab_content = ctk.CTkFrame(self.right_panel, fg_color="#161b22", corner_radius=0)
         self.tab_content.grid(row=1, column=0, sticky="nsew")
@@ -526,6 +529,8 @@ class DevWindow(ctk.CTkFrame):
         self.ia_panel.grid_columnconfigure(0, weight=1)
         self.ia_panel.grid_rowconfigure(0, weight=3)
         self.ia_panel.grid_rowconfigure(1, weight=2)
+        self.ia_panel.grid_rowconfigure(2, weight=0)
+        self.ia_panel.grid_rowconfigure(3, weight=0)
 
         self.ia_chat = ctk.CTkTextbox(self.ia_panel, font=ctk.CTkFont(family="Consolas", size=12), fg_color="#0d1117", text_color="#c9d1d9", border_width=0)
         self.ia_chat.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
@@ -553,12 +558,12 @@ class DevWindow(ctk.CTkFrame):
             hover_color="#a33434",
             font=ctk.CTkFont(size=10, weight="bold"),
         ).pack(side="right", padx=4)
-        self.proposals_container = ctk.CTkScrollableFrame(proposal_section, fg_color="#161b22", height=200)
+        self.proposals_container = ctk.CTkScrollableFrame(proposal_section, fg_color="#161b22")
         self.proposals_container.grid(row=1, column=0, sticky="nsew")
         self.proposals_container.grid_columnconfigure(0, weight=1)
 
         # Saisie IA (agrandie, multiligne)
-        self.ia_entry = ctk.CTkTextbox(self.ia_panel, height=90, font=ctk.CTkFont(size=12), fg_color=BG_EDITOR, border_color="#4b4c54", text_color=TEXT_MAIN)
+        self.ia_entry = ctk.CTkTextbox(self.ia_panel, height=100, font=ctk.CTkFont(size=12), fg_color=BG_EDITOR, border_color="#4b4c54", text_color=TEXT_MAIN)
         self.ia_entry.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 4))
         self.ia_entry.insert("1.0", "Demandez à l'IA... (Ctrl+Entrée pour envoyer)")
         self.ia_entry.bind("<Key>", self.ia_key_handler)
@@ -569,16 +574,15 @@ class DevWindow(ctk.CTkFrame):
         ctk.CTkButton(btn_ia_frame, text="Refactoriser + commenter", command=self.refactor_and_comment, fg_color="#6366f1", hover_color="#4f46e5", font=ctk.CTkFont(size=11)).pack(side="left")
 
         # Afficher preview par défaut
-        self.preview_frame.place(relx=0, rely=0, relwidth=1, relheight=1)
-        self.preview_bar.place(relx=0, rely=1.0, relwidth=1, anchor="sw", y=-4)
-        self.ia_panel.place_forget()
+        self.preview_frame.grid(row=0, column=0, sticky="nsew")
+        self.preview_bar.grid(row=1, column=0, sticky="ew")
+        self.ia_panel.grid_remove()
         self.active_tab = "preview"
 
-        # Barre d'état
+        # Barre d'etat (ligne 2, pleine largeur sur les 3 colonnes)
         self.status_var = ctk.StringVar(value="Prêt")
-        status_bar = ctk.CTkFrame(self, fg_color=BG_PANEL, height=28, corner_radius=0)
-        status_bar.grid(row=2, column=0, columnspan=2, sticky="ew")
-        status_bar.grid_propagate(False)
+        status_bar = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0)
+        status_bar.grid(row=2, column=0, columnspan=3, sticky="ew")
         ctk.CTkLabel(status_bar, textvariable=self.status_var, font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(side="left", padx=12, pady=4)
 
         self.ai_btn = ctk.CTkButton(self.editor_frame, text="🤖 Demander à l'IA", width=120, command=self.ask_ai_help, fg_color=IA_COLOR, hover_color=IA_HOVER, font=ctk.CTkFont(size=11, weight="bold"))

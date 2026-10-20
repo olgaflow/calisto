@@ -170,10 +170,14 @@ class App(ctk.CTk):
 
         # Tabs
         self.tabs = ctk.CTkTabview(self, fg_color=BG_APP)
-        self.tabs.grid(row=0, column=0, sticky="nsew", padx=10, pady=10)
+        self.tabs.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         self.tabs.add("Discussion")
         self.tabs.add("Éditeur de code")
         self.tabs.add("Apprentissage")
+        # Forcer l'etirement des onglets
+        self.tabs._segmented_button.grid_columnconfigure(0, weight=1)
+        self.tabs._segmented_button.grid_columnconfigure(1, weight=1)
+        self.tabs._segmented_button.grid_columnconfigure(2, weight=1)
 
         self.chat_tab = self.tabs.tab("Discussion")
         self.code_tab = self.tabs.tab("Éditeur de code")
@@ -181,6 +185,10 @@ class App(ctk.CTk):
 
         self.chat_tab.grid_columnconfigure(0, weight=1)
         self.chat_tab.grid_rowconfigure(1, weight=1)
+        self.code_tab.grid_columnconfigure(0, weight=1)
+        self.code_tab.grid_rowconfigure(0, weight=1)
+        self.learning_tab.grid_columnconfigure(0, weight=1)
+        self.learning_tab.grid_rowconfigure(0, weight=1)
 
         # Header
         header = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, corner_radius=0)
@@ -226,7 +234,7 @@ class App(ctk.CTk):
         self.code_tab.grid_rowconfigure(0, weight=1)
         if DevWindow is not None:
             self.dev_window = DevWindow(self, master=self.code_tab)
-            self.dev_window.grid(row=0, column=0, sticky="nsew")
+            self.dev_window.grid(row=0, column=0, sticky="nsew", padx=0, pady=0)
         else:
             ctk.CTkLabel(self.code_tab, text="L'éditeur de code n'a pas pu être chargé.", text_color=TEXT_MUTED).pack(pady=40)
 
