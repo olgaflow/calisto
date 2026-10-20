@@ -203,12 +203,11 @@ class App(ctk.CTk):
         self.file_chips_label.grid(row=2, column=0, sticky="w", padx=15, pady=(0, 5))
 
         # Input area
-        bottom = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, height=140, corner_radius=0)
+        bottom = ctk.CTkFrame(self.chat_tab, fg_color=BG_APP, corner_radius=0)
         bottom.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
-        bottom.grid_propagate(False)
         bottom.grid_columnconfigure(0, weight=1)
 
-        self.entry = ctk.CTkTextbox(bottom, height=90, font=ctk.CTkFont(size=13), fg_color=BG_INPUT, border_color="#4b4c54", text_color=TEXT_MAIN)
+        self.entry = ctk.CTkTextbox(bottom, height=120, font=ctk.CTkFont(size=13), fg_color=BG_INPUT, border_color="#4b4c54", text_color=TEXT_MAIN)
         self.entry.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         self.entry.bind("<Return>", self.on_enter)
         self.entry.bind("<Shift-Return>", self.on_shift_enter)
