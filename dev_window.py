@@ -365,18 +365,8 @@ class DevWindow(ctk.CTkFrame):
 
         header_right = ctk.CTkFrame(header, fg_color="transparent")
         header_right.pack(side="right", padx=12, pady=4)
-        self.maximize_button = ctk.CTkButton(
-            header_right,
-            text="⛶ Agrandir",
-            width=95,
-            command=self.toggle_maximize,
-            fg_color="#6b7280",
-            hover_color="#4b5563",
-        )
-        self.maximize_button.pack(side="right", padx=6, pady=2)
         ctk.CTkButton(header_right, text="📁 Ouvrir dossier", width=110, command=self.open_folder, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=6, pady=2)
         ctk.CTkButton(header_right, text="📄 Nouveau fichier", width=110, command=self.new_file, fg_color=BG_EDITOR, hover_color="#2a2a3e").pack(side="right", padx=6, pady=2)
-        ctk.CTkButton(header_right, text="🗑️ Supprimer", width=100, command=self.delete_selected, fg_color="#c24141", hover_color="#a33434").pack(side="right", padx=6, pady=2)
         ctk.CTkButton(header_right, text="💾 Enregistrer", width=100, command=self.save_file, fg_color=ACCENT, hover_color=ACCENT_HOVER).pack(side="right", padx=6, pady=2)
         ctk.CTkButton(header_right, text="🌐 Prévisualiser", width=110, command=self.preview_open_browser, fg_color="#6366f1", hover_color="#4f46e5").pack(side="right", padx=6, pady=2)
         ctk.CTkButton(header_right, text="🎨 Réglages couleurs", width=120, command=self.open_color_settings, fg_color="#6b7280", hover_color="#4b5563").pack(side="right", padx=6, pady=2)
@@ -437,6 +427,7 @@ class DevWindow(ctk.CTkFrame):
         ctk.CTkButton(editor_quick, text="📍 Ligne", command=self._goto_line, fg_color="#6b7280", hover_color="#4b5563", **btn_style).pack(side="left", padx=4)
         ctk.CTkButton(editor_quick, text="💬 Commenter", command=self._toggle_comment, fg_color="#a855f7", hover_color="#9333ea", **btn_style).pack(side="left", padx=4)
         ctk.CTkButton(editor_quick, text="📄 Retour ligne", command=self._toggle_word_wrap, fg_color="#6b7280", hover_color="#4b5563", **btn_style).pack(side="left", padx=4)
+        ctk.CTkButton(editor_quick, text="🤖 Demander à l'IA", command=self.ask_ai_help, fg_color=IA_COLOR, hover_color=IA_HOVER, **btn_style).pack(side="left", padx=4)
 
         self.line_numbers = tk.Canvas(
             self.editor_frame,
@@ -478,14 +469,15 @@ class DevWindow(ctk.CTkFrame):
         self.right_panel.grid_rowconfigure(1, weight=1)
 
         self.tab_frame = ctk.CTkFrame(self.right_panel, fg_color="#2a2a2e", corner_radius=0)
-        self.tab_frame.grid(row=0, column=0, sticky="ew")
+        self.tab_frame.grid(row=0, column=0, sticky="ew", pady=(0, 1))
         self.tab_frame.grid_propagate(False)
+        self.tab_frame.configure(height=34)
         self.tab_frame.grid_columnconfigure(0, weight=1)
         self.tab_frame.grid_columnconfigure(1, weight=1)
 
-        self.tab_preview = ctk.CTkButton(self.tab_frame, text="🌐 Prévisualisation (temps réel)", fg_color="transparent", text_color=TEXT_MAIN, hover_color="#3a3a3e", command=lambda: self.switch_tab("preview"), font=ctk.CTkFont(size=12, weight="bold"))
+        self.tab_preview = ctk.CTkButton(self.tab_frame, text="🌐 Prévisualisation", fg_color="#3a3a3e", text_color="#ffffff", hover_color="#4a4a4e", command=lambda: self.switch_tab("preview"), font=ctk.CTkFont(size=12, weight="bold"))
         self.tab_preview.grid(row=0, column=0, sticky="nsew", padx=2, pady=2)
-        self.tab_ia = ctk.CTkButton(self.tab_frame, text="🤖 Assistant IA", fg_color="#2a2a3e", text_color="#ffffff", hover_color="#3a3a3e", command=lambda: self.switch_tab("ia"), font=ctk.CTkFont(size=12, weight="bold"))
+        self.tab_ia = ctk.CTkButton(self.tab_frame, text="🤖 Assistant IA", fg_color="#2a2a2e", text_color=TEXT_MAIN, hover_color="#3a3a3e", command=lambda: self.switch_tab("ia"), font=ctk.CTkFont(size=12, weight="bold"))
         self.tab_ia.grid(row=0, column=1, sticky="nsew", padx=2, pady=2)
 
         self.tab_content = ctk.CTkFrame(self.right_panel, fg_color="#161b22", corner_radius=0)
@@ -584,9 +576,6 @@ class DevWindow(ctk.CTkFrame):
         status_bar = ctk.CTkFrame(self, fg_color=BG_PANEL, corner_radius=0)
         status_bar.grid(row=2, column=0, columnspan=3, sticky="ew")
         ctk.CTkLabel(status_bar, textvariable=self.status_var, font=ctk.CTkFont(size=11), text_color=TEXT_MUTED).pack(side="left", padx=12, pady=4)
-
-        self.ai_btn = ctk.CTkButton(self.editor_frame, text="🤖 Demander à l'IA", width=120, command=self.ask_ai_help, fg_color=IA_COLOR, hover_color=IA_HOVER, font=ctk.CTkFont(size=11, weight="bold"))
-        self.ai_btn.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
 
     def switch_tab(self, name):
         if name == self.active_tab:
@@ -2720,6 +2709,34 @@ class DevWindow(ctk.CTkFrame):
             messagebox.showinfo("IA occupee", "L'IA centrale traite deja une demande. Reessayez apres sa reponse.")
             return
 
+        # Fenetre de progression
+        prog = ctk.CTkToplevel(self)
+        prog.title("Generation en cours")
+        prog.geometry("400x150")
+        prog.configure(fg_color="#1a1a1b")
+        prog.transient(self)
+        prog.grab_set()
+        prog.resizable(False, False)
+
+        ctk.CTkLabel(prog, text="L'IA genere votre code…", font=ctk.CTkFont(size=14, weight="bold"), text_color=TEXT_MAIN).pack(pady=(20, 10))
+        pb = ctk.CTkProgressBar(prog, width=300)
+        pb.pack(pady=10)
+        pb.set(0)
+        lbl = ctk.CTkLabel(prog, text="0%", font=ctk.CTkFont(size=12), text_color=TEXT_MUTED)
+        lbl.pack()
+
+        # Animation simple de la barre
+        def animate(i=0):
+            if i <= 100:
+                pb.set(i / 100)
+                lbl.configure(text="{}%".format(i))
+                prog.after(30, lambda: animate(i + 5))
+            else:
+                pb.set(1)
+                lbl.configure(text="100%")
+
+        animate()
+
         self.ia_entry.delete("1.0", "end")
         self.ia_append(">> {}".format(content))
         context_files = self.get_ai_context_files()
@@ -2732,15 +2749,15 @@ class DevWindow(ctk.CTkFrame):
         ]
         if truncation_notes:
             self.ia_append("⚠️ Contexte code incomplet : " + " ".join(truncation_notes))
-        self.status_var.set("L'IA analyse les fichiers du projet et prépare une réponse...")
+        self.status_var.set("L'IA analyse les fichiers du projet et prépare une réponse…")
 
         def worker():
             try:
                 texte = self.parent_app.ask_ai_central(content, context_files)
             except Exception as e:
-                self.after(0, lambda error=str(e): self._handle_ia_error(error))
+                self.after(0, lambda error=str(e): (prog.destroy(), self._handle_ia_error(error)))
                 return
-            self.after(0, lambda: self._handle_ia_response(texte))
+            self.after(0, lambda: (prog.destroy(), self._handle_ia_response(texte)))
         threading.Thread(target=worker, daemon=True).start()
         return "break"
 
@@ -3353,7 +3370,8 @@ class DevWindow(ctk.CTkFrame):
         self.switch_tab("ia")
         self.ia_entry.delete("1.0", "end")
         self.ia_entry.insert("1.0", "Analyse ce code et donne-moi des conseils d'amélioration avec des blocs de code corrigés :")
-        self.ia_send()
+        self.ia_entry.focus_set()
+        self.status_var.set("Écrivez votre demande, puis cliquez sur 'Envoyer à l'IA'")
 
     def on_close(self):
         self._invalidate_inline_completion()
