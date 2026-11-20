@@ -283,7 +283,7 @@ def base_dir():
 GENERATED_DIR = base_dir() / "generated"
 IA_CREATIONS_DIR = base_dir() / "ia_creations"
 
-CODE_PROJECT_DIR = IA_CREATIONS_DIR / "projets"
+CODE_PROJECT_DIR = Path.home() / "Desktop" / "Calisto_Projets"
 
 
 def resolve_generated_file_path(filepath, output_dir=None):
