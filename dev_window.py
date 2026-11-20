@@ -2906,9 +2906,9 @@ class DevWindow(ctk.CTkFrame):
 
 
 
-    def open_folder(self):
-
-        path = filedialog.askdirectory(title="Choisir un dossier de projet")
+    def open_folder(self, path=None):
+        if path is None:
+            path = filedialog.askdirectory(title="Choisir un dossier de projet")
 
         if not path:
 

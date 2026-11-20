@@ -3192,11 +3192,38 @@ Par quoi souhaitez-vous commencer ?"""
             messagebox.showerror("Téléchargement impossible", str(error))
 
     def _create_code_project(self, nom_projet):
-        """Demande l'autorisation et crée un dossier de projet de code dans ia_creations/projets/."""
-        target = _ask_project_folder(nom_projet)
-        if target is None:
-            self.status_var.set("Projet annulé")
+        """Cree un dossier de projet de code dans ia_creations/projets/ et l'ouvre dans l'editeur."""
+        if not nom_projet:
+            nom_projet = "mon_projet"
+        nom_projet = nom_projet.strip()
+        nom_projet = re.sub(r'[<>:"/\\|?*]', "_", nom_projet)
+        if not nom_projet:
+            nom_projet = "mon_projet"
+
+        CODE_PROJECT_DIR.mkdir(parents=True, exist_ok=True)
+        target = CODE_PROJECT_DIR / nom_projet
+
+        if target.exists():
+            if not messagebox.askyesno(
+                "Dossier existant",
+                "Le dossier '{}' existe deja.\nVoulez-vous l'utiliser pour ce projet ?".format(nom_projet),
+            ):
+                self.status_var.set("Projet annule")
+                return None
+        else:
+            if not messagebox.askyesno(
+                "Creer le dossier",
+                "L'IA propose de creer le dossier de projet :\n{}\n\nAutoriser ?".format(target),
+            ):
+                self.status_var.set("Projet annule")
+                return None
+
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError as error:
+            messagebox.showerror("Erreur", "Impossible de creer le dossier : {}".format(error))
             return None
+
         self._current_project_dir = target
         if self.dev_window is not None and self.dev_window.winfo_exists():
             try:
@@ -3213,7 +3240,8 @@ Par quoi souhaitez-vous commencer ?"""
     def handle_ai_creation_request(self, command_type, filepath, content, binary=False):
         if command_type == "fichier":
             try:
-                target_path = resolve_generated_file_path(filepath)
+                output_dir = self._current_project_dir if self._current_project_dir else None
+                target_path = resolve_generated_file_path(filepath, output_dir=output_dir)
             except ValueError as error:
                 messagebox.showerror("Nom de fichier invalide", str(error))
                 return
