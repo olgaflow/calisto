@@ -2479,10 +2479,16 @@ Par quoi souhaitez-vous commencer ?"""
         pattern = r"\[CREER_FICHIER:\s*([^\]]+)\](.*?)\[/CREER_FICHIER\]"
         for filepath, content in re.findall(pattern, text, re.DOTALL | re.IGNORECASE):
             filename = Path(filepath.strip()).name
+            # Nettoyer le contenu : retirer les balises de bloc de code Markdown (```html, ```, etc.)
+            cleaned = content.strip("\r\n ")
+            # Supprimer les fences de bloc de code Markdown
+            cleaned = re.sub(r"^```[a-zA-Z0-9]*\s*\n", "", cleaned, flags=re.MULTILINE)
+            cleaned = re.sub(r"\n```\s*$", "", cleaned, flags=re.MULTILINE)
+            cleaned = cleaned.strip()
             if filename.lower().endswith(".pdf"):
                 target_path = self._stage_pdf_artifact(
                     filename,
-                    content.strip("\r\n"),
+                    cleaned,
                     bubble,
                     request,
                 )
@@ -2490,7 +2496,7 @@ Par quoi souhaitez-vous commencer ?"""
                 target_path = self.handle_ai_creation_request(
                     "fichier",
                     filepath.strip(),
-                    content.strip("\r\n"),
+                    cleaned,
                 )
             if target_path and target_path.suffix.lower() == ".pdf":
                 created_pdfs.append(target_path)
