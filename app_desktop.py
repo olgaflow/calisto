@@ -3257,7 +3257,10 @@ Par quoi souhaitez-vous commencer ?"""
         if command_type == "fichier":
             try:
                 output_dir = self._current_project_dir if self._current_project_dir else None
-                target_path = resolve_generated_file_path(filepath, output_dir=output_dir)
+                # Si un projet est ouvert, on n'utilise que le nom du fichier (sans sous-dossiers)
+                # pour eviter que l'IA cree des dossiers imbriques comme PortfolioCalisto/index.html
+                clean_name = Path(filepath).name
+                target_path = resolve_generated_file_path(clean_name, output_dir=output_dir)
             except ValueError as error:
                 messagebox.showerror("Nom de fichier invalide", str(error))
                 return
