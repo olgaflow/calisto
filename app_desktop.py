@@ -1772,6 +1772,8 @@ Par quoi souhaitez-vous commencer ?"""
             self._schedule_chat_compaction(request, memory_history, full)
         except Exception as e:
             self.ui_queue.put(("error", lbl, str(e)))
+        finally:
+            self.after(0, self._finish)
 
     def _build_pdf_document(self, model, request):
         user_text = ""
