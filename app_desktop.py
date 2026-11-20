@@ -161,6 +161,97 @@ def _is_image_edit_request(prompt):
     )
 
 
+CODE_PROJECT_ACTION_PATTERN = (
+    r"creer|cree|creez|creation|faire|fait|fais|fasse|fabriquer|fabrique|"
+    r"construire|construis|construis|developper|developpe|developpez|"
+    r"coder|code|codons|programmer|programme|programmez|"
+    r"realiser|realise|realisez|mettre|mets|mettez|"
+    r"aide|aider|aidez|guide|guidez|montre|montrez|apprendre|apprends|"
+    r"build|create|make|code|program|develop|help|guide|show|learn"
+)
+
+CODE_PROJECT_SUBJECT_PATTERN = (
+    r"site|page|page web|application|appli|projet|script|programme|"
+    r"html|css|javascript|python|fichier|fichiers|dossier|"
+    r"formulaire|bouton|menu|navbar|carte|cards|galerie|"
+    r"jeu|jeux|animation|template|modele|exemple|demo|démo|"
+    r"portfolio|blog|boutique|ecommerce|landing|"
+    r"page|page html|page web|page internet|"
+    r"un site|un projet|un script|un programme|un exemple|un demo|un modèle|un modèle"
+)
+
+
+def _is_code_project_request(prompt):
+    """Detecte une demande d'aide au codage / creation de projet."""
+    normalized = (
+        unicodedata.normalize("NFKD", str(prompt))
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .casefold()
+    )
+    return bool(
+        re.search(
+            r"\b(?:" + CODE_PROJECT_ACTION_PATTERN + r")\b.{0,400}\b(?:" + CODE_PROJECT_SUBJECT_PATTERN + r")\b",
+            normalized,
+            re.S,
+        )
+        or re.search(
+            r"\b(?:" + CODE_PROJECT_SUBJECT_PATTERN + r")\b.{0,300}\b(?:" + CODE_PROJECT_ACTION_PATTERN + r")\b",
+            normalized,
+            re.S,
+        )
+        or re.search(r"\b(?:site|page|application|projet|script|html|css|javascript)\b", normalized, re.S)
+    )
+
+
+CODE_PROJECT_DIR = IA_CREATIONS_DIR / "projets"
+
+
+def _ask_project_folder(prompt_text):
+    """Demande a l'utilisateur de creer ou choisir un dossier de projet."""
+    from tkinter import simpledialog
+
+    default_name = "mon_projet"
+    nom = simpledialog.askstring(
+        "Nouveau projet de code",
+        "Nom du dossier de projet (sera cree dans ia_creations/projets/) :",
+        initialvalue=default_name,
+    )
+    if not nom or not nom.strip():
+        return None
+    nom = nom.strip()
+    # Nettoyer le nom
+    nom = re.sub(r'[<>:"/\\|?*]', "_", nom)
+    target = CODE_PROJECT_DIR / nom
+    if target.exists():
+        if not messagebox.askyesno(
+            "Dossier existant",
+            "Le dossier '{}' existe deja.\nVoulez-vous l'utiliser pour ce projet ?".format(nom),
+        ):
+            return None
+    else:
+        if not messagebox.askyesno(
+            "Creer le dossier",
+            "L'IA propose de creer le dossier de projet :\n{}\n\nAutoriser ?".format(target),
+        ):
+            return None
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError as error:
+        messagebox.showerror("Erreur", "Impossible de creer le dossier : {}".format(error))
+        return None
+    return target
+
+
+def _is_within_project(path, project_dir):
+    try:
+        Path(path).resolve().relative_to(Path(project_dir).resolve())
+        return True
+    except ValueError:
+        return False
+
+
+
 def _nom_fichier_image(prompt, staging_dir=None):
     """Genere un nom de fichier lisible a partir du prompt, sans hash moche."""
     base = str(prompt).strip().lower()
@@ -1062,6 +1153,7 @@ class App(ctk.CTk):
         self._image_progress_pct = None
         self._image_progress_job = None
         self._image_progress_value = 0
+        self._current_project_dir = None
 
         self.dev_window = None
         self.messages = []
@@ -1362,6 +1454,9 @@ Par quoi souhaitez-vous commencer ?"""
             content = read_file_content(p)
             parts.append("\n\n[Fichier : {}]\n{}".format(p.name, content))
         full = "\n".join(parts)
+        if request.get("code_project") and not self._current_project_dir:
+            nom_projet = "mon_projet"
+            full = "\n\n[CREER_PROJET: {}]\n{}".format(nom_projet, full)
 
         self.entry.delete("1.0", "end")
         self.attached_files = []
@@ -1396,6 +1491,7 @@ Par quoi souhaitez-vous commencer ?"""
                 if attached_images and _is_image_edit_request(prompt)
                 else ""
             ),
+            "code_project": bool(_is_code_project_request(prompt)),
             "image_generator_available": bool(
                 image_generation and image_generation.is_ready()
             ),
@@ -1559,6 +1655,14 @@ Par quoi souhaitez-vous commencer ?"""
             "\n- Document riche (CSS, images, colonnes, filigrane) : placez un document HTML complet (<!DOCTYPE html> ... </html>) entre les balises; Calisto le rend avec un vrai navigateur si disponible."
             "\n- Les images doivent pointer vers une URL http(s) ou un fichier local existant. Pas d'emoji ni de caracteres non latins : ils sont remplaces."
             "\n- Si le fichier est destine au projet ouvert, fournissez plutot un bloc de code avec sa langue et filename=nom.ext afin que l'utilisateur puisse accepter ou refuser son integration."
+            "\n\nProjets de code - comportement professeur :"
+            "\n- Quand l'utilisateur demande de l'aide pour coder ou creer un projet, agis comme un professeur patient."
+            "\n- Guide par indices et questions, ne donne pas toute la solution d'un coup."
+            "\n- Avant de generer du code, propose de creer un dossier de projet avec la balise [CREER_PROJET: nom_du_projet]."
+            "\n- Demande toujours l'autorisation avant de creer ou modifier des fichiers dans le projet."
+            "\n- Explique chaque fichier et chaque ligne de code simplement, pour un debutant."
+            "\n- Encourage l'utilisateur a tester et a corriger lui-même ses erreurs."
+            "\n- Ne bascule pas vers l'editeur sans avoir cree le dossier de projet et obtenu l'accord."
         )
         if request["pdf_output"]:
             system_with_context += (
@@ -2408,6 +2512,10 @@ Par quoi souhaitez-vous commencer ?"""
         pattern2 = r"\[MODIFIER_APP: ([^\]]+)\](.*?)\[/MODIFIER_APP\]"
         for filepath, content in re.findall(pattern2, text, re.DOTALL):
             self.handle_ai_creation_request("app", filepath.strip(), content.strip("\r\n"))
+        # Projets de code : [CREER_PROJET: nom_du_projet]
+        pattern3 = r"\[CREER_PROJET:\s*([^\]]+)\]"
+        for nom_projet in re.findall(pattern3, text, re.IGNORECASE):
+            self._create_code_project(nom_projet.strip())
         return created_pdfs
 
     def _stage_pdf_artifact(self, filename, content, bubble, request=None):
@@ -3078,6 +3186,25 @@ Par quoi souhaitez-vous commencer ?"""
             self.status_var.set("PDF téléchargé : {}".format(target))
         except (OSError, ValueError, RuntimeError) as error:
             messagebox.showerror("Téléchargement impossible", str(error))
+
+    def _create_code_project(self, nom_projet):
+        """Demande l'autorisation et crée un dossier de projet de code dans ia_creations/projets/."""
+        target = _ask_project_folder(nom_projet)
+        if target is None:
+            self.status_var.set("Projet annulé")
+            return None
+        self._current_project_dir = target
+        if self.dev_window is not None and self.dev_window.winfo_exists():
+            try:
+                self.dev_window.open_folder(str(target))
+            except Exception:
+                pass
+        try:
+            self.tabs.set("Editeur de code")
+        except Exception:
+            pass
+        self.status_var.set("Projet ouvert : {}".format(target.name))
+        return target
 
     def handle_ai_creation_request(self, command_type, filepath, content, binary=False):
         if command_type == "fichier":
