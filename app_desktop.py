@@ -1455,9 +1455,6 @@ Par quoi souhaitez-vous commencer ?"""
             content = read_file_content(p)
             parts.append("\n\n[Fichier : {}]\n{}".format(p.name, content))
         full = "\n".join(parts)
-        if request.get("code_project") and not self._current_project_dir:
-            nom_projet = "mon_projet"
-            full = "\n\n[CREER_PROJET: {}]\n{}".format(nom_projet, full)
 
         self.entry.delete("1.0", "end")
         self.attached_files = []
@@ -1505,6 +1502,10 @@ Par quoi souhaitez-vous commencer ?"""
                 )
             ),
         }
+
+        if request.get("code_project") and not self._current_project_dir:
+            nom_projet = "mon_projet"
+            full = "\n\n[CREER_PROJET: {}]\n{}".format(nom_projet, full)
 
         if request["pdf_output"]:
             request["large_output"] = True
