@@ -1237,6 +1237,9 @@ class App(ctk.CTk):
         self._code_progress_job = None
         self._code_progress_bar = None
         self._code_progress_status = ""
+        self._code_started = 0.0
+        self._code_chunks = 0
+        self._chat_started = 0.0
 
         self.dev_window = None
         self.messages = []
@@ -1548,6 +1551,8 @@ Par quoi souhaitez-vous commencer ?"""
         self.streaming = True
         self.send_btn.configure(state="disabled", fg_color="#3b4653")
         self.status_var.set("L'IA repond…")
+        self._chat_started = time.monotonic()
+        self._tick_chat_timer()
         if re.search(r"nouveau\s+(?:projet|site|dossier)|autre\s+(?:projet|site)", prompt, re.IGNORECASE):
             self._current_project_dir = None
         pdf_output = _is_pdf_creation_request(prompt)
@@ -3364,10 +3369,12 @@ Par quoi souhaitez-vous commencer ?"""
     def _start_code_progress(self, lbl, bubble):
         self._code_progress_active = True
         self._code_progress_status = "Calisto prepare le projet"
+        self._code_started = time.monotonic()
+        self._code_chunks = 0
         try:
-            bar = ctk.CTkProgressBar(bubble, mode="indeterminate", width=260, height=10)
-            bar.pack(padx=16, pady=(0, 10), anchor="w")
-            bar.start()
+            bar = ctk.CTkProgressBar(bubble, mode="determinate", width=260, height=10)
+            bar.pack(padx=16, pady=(0, 6), anchor="w")
+            bar.set(0)
             self._code_progress_bar = bar
         except Exception:
             self._code_progress_bar = None
@@ -3376,9 +3383,28 @@ Par quoi souhaitez-vous commencer ?"""
     def _tick_code_progress(self, lbl, step):
         if not self._code_progress_active:
             return
+        elapsed = max(1, int(time.monotonic() - self._code_started))
+        total = 4096  # même valeur que num_predict dans _stream_code_project
+        done = min(self._code_chunks, total)
+        ratio = min(done / total, 0.97)
+        if self._code_progress_bar is not None:
+            self._code_progress_bar.set(ratio)
+        if done == 0:
+            detail = "chargement du modele…"
+        elif done < 30:
+            detail = "démarrage…"
+        else:
+            remaining = int(max(0, (total - done) / (done / elapsed)))
+            detail = "{}% · {}:{:02d} restant au maximum".format(
+                int(ratio * 100), remaining // 60, remaining % 60
+            )
         if lbl.winfo_exists():
-            lbl.configure(text="\u270d {} {}".format(self._code_progress_status, "." * (step % 4)))
-        self._code_progress_job = self.after(400, self._tick_code_progress, lbl, step + 1)
+            lbl.configure(
+                text="✍️ {}\n⏱ {}:{:02d} écoulé · {}".format(
+                    self._code_progress_status, elapsed // 60, elapsed % 60, detail
+                )
+            )
+        self._code_progress_job = self.after(500, self._tick_code_progress, lbl, step + 1)
 
     def _stop_code_progress(self):
         self._code_progress_active = False
@@ -3395,6 +3421,13 @@ Par quoi souhaitez-vous commencer ?"""
             except Exception:
                 pass
             self._code_progress_bar = None
+
+    def _tick_chat_timer(self):
+        if not self.streaming:
+            return
+        elapsed = int(time.monotonic() - self._chat_started)
+        self.status_var.set("L'IA répond… ⏱ {}:{:02d}".format(elapsed // 60, elapsed % 60))
+        self.after(1000, self._tick_chat_timer)
 
     @staticmethod
     def _code_progress_label(partial):
@@ -3454,6 +3487,7 @@ Par quoi souhaitez-vous commencer ?"""
             )
             for chunk in stream:
                 full += chunk["message"]["content"]
+                self._code_chunks += 1
                 self._code_progress_status = self._code_progress_label(full)
             if not _extract_project_files(full):
                 raise RuntimeError(
