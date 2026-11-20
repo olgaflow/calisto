@@ -1505,7 +1505,7 @@ Par quoi souhaitez-vous commencer ?"""
 
         if request.get("code_project") and not self._current_project_dir:
             nom_projet = "mon_projet"
-            full = "\n\n[CREER_PROJET: {}]\n{}".format(nom_projet, full)
+            self._create_code_project(nom_projet)
 
         if request["pdf_output"]:
             request["large_output"] = True
@@ -1665,7 +1665,7 @@ Par quoi souhaitez-vous commencer ?"""
             "\n- Couleur de texte : [c:#C0392B]passage a souligner[/c] avec un code hexadecimal #RRGGBB."
             "\n- Document riche (CSS, images, colonnes, filigrane) : placez un document HTML complet (<!DOCTYPE html> ... </html>) entre les balises; Calisto le rend avec un vrai navigateur si disponible."
             "\n- Les images doivent pointer vers une URL http(s) ou un fichier local existant. Pas d'emoji ni de caracteres non latins : ils sont remplaces."
-            "\n- Si le fichier est destine au projet ouvert, fournissez plutot un bloc de code avec sa langue et filename=nom.ext afin que l'utilisateur puisse accepter ou refuser son integration."
+            "\n- Si le fichier est destine au projet ouvert, utilisez TOUJOURS la balise [CREER_FICHIER: nom.ext] avec le code complet a l'interieur. N'utilisez jamais de blocs Markdown ```filename=...``` pour creer des fichiers dans un projet, car ils ne sont pas enregistres sur le disque."
             "\n\nProjets de code - comportement professeur :"
             "\n- Quand l'utilisateur demande de l'aide pour coder ou creer un projet, agis comme un professeur patient."
             "\n- Guide par indices et questions, ne donne pas toute la solution d'un coup."
@@ -2298,6 +2298,7 @@ Par quoi souhaitez-vous commencer ?"""
             self._offer_code_proposals(
                 full,
                 pdf_output=pdf_output or bool(image_output),
+                code_project=bool(request.get("code_project")),
             )
             self._last_chat_activity = time.monotonic()
 
@@ -2397,7 +2398,9 @@ Par quoi souhaitez-vous commencer ?"""
             return "\n\n".join(sections)
         return ""
 
-    def _offer_code_proposals(self, response, pdf_output=False):
+    def _offer_code_proposals(self, response, pdf_output=False, code_project=False):
+        if code_project:
+            return
         if (
             pdf_output
             or re.search(PDF_CREATION_START_PATTERN, response, re.IGNORECASE)
