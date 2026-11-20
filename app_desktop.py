@@ -204,7 +204,6 @@ def _is_code_project_request(prompt):
     )
 
 
-CODE_PROJECT_DIR = IA_CREATIONS_DIR / "projets"
 
 
 def _ask_project_folder(prompt_text):
@@ -283,6 +282,8 @@ def base_dir():
 
 GENERATED_DIR = base_dir() / "generated"
 IA_CREATIONS_DIR = base_dir() / "ia_creations"
+
+CODE_PROJECT_DIR = IA_CREATIONS_DIR / "projets"
 
 
 def resolve_generated_file_path(filepath, output_dir=None):
