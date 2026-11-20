@@ -1,24 +1,24 @@
 import streamlit as st
 import ollama
 
-st.set_page_config(page_title="Mon IA Locale", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Mon IA Locale", page_icon="ð¤", layout="wide")
 
 MODEL = "llama3.2"
 
-st.title("🤖 Mon IA Locale (Ollama)")
-st.caption(f"Modèle : {MODEL} — tout tourne en local sur votre PC")
+st.title("ð¤ Mon IA Locale (Ollama)")
+st.caption(f"Modele : {MODEL} - tout tourne en local sur votre PC")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 with st.sidebar:
-    st.header("Réglages")
+    st.header("Reglages")
     system_prompt = st.text_area(
-        "Instruction système (personnalité de l'IA)",
-        value="Tu es un assistant utile, amical et tu réponds en français.",
+        "Instruction systeme (personnalite de l'IA)",
+        value="Tu es un assistant utile, amical et tu reponds en francais.",
         height=120,
     )
-    temperature = st.slider("Créativité (température)", 0.0, 1.5, 0.7, 0.1)
+    temperature = st.slider("Creativite (temperature)", 0.0, 1.5, 0.7, 0.1)
     if st.button("Effacer la conversation"):
         st.session_state.messages = []
         st.rerun()
@@ -27,7 +27,7 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Écrivez votre message ici..."):
+if prompt := st.chat_input("Ãcrivez votre message ici..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -47,7 +47,7 @@ if prompt := st.chat_input("Écrivez votre message ici..."):
             for chunk in stream:
                 token = chunk["message"]["content"]
                 full += token
-                placeholder.markdown(full + "▌")
+                placeholder.markdown(full + "â")
             placeholder.markdown(full)
         except Exception as e:
             full = f"Erreur : {e}"

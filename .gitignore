@@ -1,6 +1,7 @@
 # Local application data and conversation history
 activity.json
 memory.json
+learning_times.json
 conversations/
 generated/
 ia_creations/
@@ -13,3 +14,12 @@ __pycache__/
 mon_script.py.txt
 preview.html
 .pytest_cache/
+
+# Windows packaging
+build/
+dist/
+calisto.spec.bak
+*.egg-info/
+
+# Journal de l'application (lancement sans console)
+calisto_log.txt
