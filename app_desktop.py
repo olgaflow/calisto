@@ -1756,6 +1756,8 @@ Par quoi souhaitez-vous commencer ?"""
                 return
             num_ctx = 8192 if request["large_output"] else 4096
             num_predict = 6144 if request["large_output"] else 768
+            if request.get("code_project"):
+                num_predict = 12000
             stream = ollama.chat(
                 model=model,
                 messages=msgs,
