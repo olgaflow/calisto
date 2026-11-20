@@ -2340,6 +2340,10 @@ class DevWindow(ctk.CTkFrame):
 
 
 
+    def refresh_tree(self):
+        """Rafraichit l'arborescence du projet (appelable depuis l'exterieur)."""
+        self._refresh_tree()
+
     def _refresh_tree(self):
 
         for w in self.tree_frame.winfo_children():
@@ -2355,6 +2359,17 @@ class DevWindow(ctk.CTkFrame):
         p = Path(self.current_folder)
 
         self.folder_label.configure(text=p.name)
+
+        # Rescanner le disque pour inclure les fichiers crees externement (par l IA)
+        if self.current_folder and self.current_folder.is_dir():
+            try:
+                for f in sorted(self.current_folder.rglob("*")):
+                    if f.is_file():
+                        cle = self._relative_key(str(f))
+                        if cle:
+                            self._managed_files.add(cle)
+            except Exception:
+                pass
 
         if not self._managed_files:
 

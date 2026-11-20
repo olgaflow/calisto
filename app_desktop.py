@@ -3297,6 +3297,17 @@ Par quoi souhaitez-vous commencer ?"""
                     "Fichier {} avec succes :\n{}".format(action, target_path),
                 )
             self.status_var.set("Fichier {} : {}".format(action, target_path.name))
+            # Rafraichir l'arbre de l'editeur si le fichier est dans le projet ouvert
+            if (
+                self.dev_window is not None
+                and self.dev_window.winfo_exists()
+                and self._current_project_dir is not None
+            ):
+                try:
+                    target_path.resolve().relative_to(self._current_project_dir.resolve())
+                    self.dev_window.refresh_tree()
+                except ValueError:
+                    pass
             return target_path
         except (OSError, ValueError, binascii.Error) as error:
             messagebox.showerror("Erreur de creation", "Impossible de creer le fichier : {}".format(error))
