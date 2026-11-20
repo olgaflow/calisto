@@ -161,24 +161,102 @@ def _is_image_edit_request(prompt):
     )
 
 
-CODE_PROJECT_ACTION_PATTERN = (
-    r"creer|cree|creez|creation|faire|fait|fais|fasse|fabriquer|fabrique|"
-    r"construire|construis|construis|developper|developpe|developpez|"
-    r"coder|code|codons|programmer|programme|programmez|"
-    r"realiser|realise|realisez|mettre|mets|mettez|"
-    r"aide|aider|aidez|guide|guidez|montre|montrez|apprendre|apprends|"
-    r"build|create|make|code|program|develop|help|guide|show|learn"
+CODE_CREATE_VERBS = (
+    r"cree|creer|creez|fais|faire|fait|genere|generer|ecris|ecrire|code|coder|"
+    r"developpe|developper|programme|programmer|construis|construire|realise|realiser|"
+    r"build|create|make|write|generate|develop"
+)
+CODE_EDIT_VERBS = (
+    r"modifie|modifier|corrige|corriger|ajoute|ajouter|change|changer|"
+    r"ameliore|ameliorer|supprime|supprimer|remplace|remplacer|fix|add|update|edit"
+)
+CODE_SUBJECTS = (
+    r"site|page|application|appli|app|script|programme|jeu|formulaire|bouton|navbar|"
+    r"calculatrice|portfolio|blog|boutique|landing|projet|html|css|javascript|python|"
+    r"code|composant|galerie|quiz|animation|template|website|webpage"
 )
 
-CODE_PROJECT_SUBJECT_PATTERN = (
-    r"site|page|page web|application|appli|projet|script|programme|"
-    r"html|css|javascript|python|fichier|fichiers|dossier|"
-    r"formulaire|bouton|menu|navbar|carte|cards|galerie|"
-    r"jeu|jeux|animation|template|modele|exemple|demo|démo|"
-    r"portfolio|blog|boutique|ecommerce|landing|"
-    r"page|page html|page web|page internet|"
-    r"un site|un projet|un script|un programme|un exemple|un demo|un modèle|un modèle"
+
+def _is_code_project_request(prompt, has_project=False):
+    """Vrai pour une demande de creation/modification de code (pas pour une simple question)."""
+    normalized = (
+        unicodedata.normalize("NFKD", str(prompt))
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .casefold()
+    )
+    if _is_pdf_creation_request(prompt):
+        return False
+    if re.match(
+        r"\s*(?:comment|pourquoi|c'?est quoi|qu'?est|quelle|quel|quels|explique|expliquez|"
+        r"a quoi|est-ce|difference|how|why|what)\b",
+        normalized,
+    ):
+        return False
+    verbs = CODE_CREATE_VERBS + ("|" + CODE_EDIT_VERBS if has_project else "")
+    return bool(
+        re.search(r"\b(?:" + verbs + r")\b.{0,200}\b(?:" + CODE_SUBJECTS + r")\b", normalized, re.S)
+    )
+
+
+PROJECT_FILE_NAME = re.compile(
+    r"[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:html?|css|js|json|py|txt|md|svg)", re.IGNORECASE
 )
+PROJECT_LANGUAGE_FILES = {
+    "html": "index.html", "css": "style.css", "js": "script.js",
+    "javascript": "script.js", "python": "main.py", "py": "main.py", "json": "data.json",
+}
+PROJECT_NAME_STOPWORDS = {
+    "cree", "creer", "creez", "fais", "faire", "fait", "genere", "generer", "ecris", "ecrire",
+    "code", "coder", "moi", "pour", "une", "des", "les", "avec", "dans", "mon", "ma", "mes",
+    "sur", "est", "que", "qui", "peux", "peut", "tu", "vous", "veux", "voudrais", "je",
+}
+
+
+def _project_name_from_prompt(prompt):
+    text = unicodedata.normalize("NFKD", str(prompt)).encode("ascii", "ignore").decode("ascii").lower()
+    words = [w for w in re.findall(r"[a-z0-9]+", text) if len(w) > 2 and w not in PROJECT_NAME_STOPWORDS]
+    return "_".join(words[:4]) or "mon_projet"
+
+
+def _clean_project_code(body):
+    body = str(body).replace("\r\n", "\n").strip("\n")
+    body = re.sub(r"\A[ \t]*```[\w+-]*[ \t]*\n", "", body)
+    body = re.sub(r"\n[ \t]*```[ \t]*\Z", "", body.rstrip())
+    return body.strip("\n") + "\n"
+
+
+def _extract_project_files(response):
+    """Retourne [(nom, contenu)] depuis les balises [CREER_FICHIER] ou, a defaut, les blocs de code."""
+    text = str(response)
+    files = {}
+    pattern = r"\[CREER_FICHIER:\s*([^\]\r\n]+)\]\s*\n?(.*?)(?=\[/CREER_FICHIER\]|\[CREER_FICHIER:|\Z)"
+    for raw_name, body in re.findall(pattern, text, re.DOTALL | re.IGNORECASE):
+        name = Path(raw_name.strip().strip("\"'`")).name
+        code = _clean_project_code(body)
+        if PROJECT_FILE_NAME.fullmatch(name) and code.strip():
+            files[name] = code
+    if files:
+        return list(files.items())
+    for info, body in re.findall(r"```([^\n`]*)\n(.*?)```", text, re.DOTALL):
+        named = re.search(r"(?:filename|file)=([^\s]+)", info, re.IGNORECASE)
+        language = (info.strip().split() or [""])[0].lower()
+        name = Path(named.group(1).strip("\"'")).name if named else PROJECT_LANGUAGE_FILES.get(language)
+        if name and PROJECT_FILE_NAME.fullmatch(name) and body.strip():
+            if name not in files or len(body) > len(files[name]):
+                files[name] = _clean_project_code(body)
+    return list(files.items())
+
+
+def _project_explanation(response):
+    """Texte explicatif de la reponse, sans aucun code."""
+    text = re.sub(
+        r"\[CREER_FICHIER:[^\]\r\n]*\].*?(?:\[/CREER_FICHIER\]|\Z)",
+        "", str(response), flags=re.DOTALL | re.IGNORECASE,
+    )
+    text = re.sub(r"```.*?(?:```|\Z)", "", text, flags=re.DOTALL)
+    text = re.sub(r"\[/?(?:CREER_FICHIER|CREER_PROJET)[^\]]*\]", "", text, flags=re.IGNORECASE)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()[:900]
 
 
 def _is_code_project_request(prompt):
@@ -1155,6 +1233,10 @@ class App(ctk.CTk):
         self._image_progress_job = None
         self._image_progress_value = 0
         self._current_project_dir = None
+        self._code_progress_active = False
+        self._code_progress_job = None
+        self._code_progress_bar = None
+        self._code_progress_status = ""
 
         self.dev_window = None
         self.messages = []
@@ -1466,6 +1548,16 @@ Par quoi souhaitez-vous commencer ?"""
         self.streaming = True
         self.send_btn.configure(state="disabled", fg_color="#3b4653")
         self.status_var.set("L'IA repond…")
+        if re.search(r"nouveau\s+(?:projet|site|dossier)|autre\s+(?:projet|site)", prompt, re.IGNORECASE):
+            self._current_project_dir = None
+        pdf_output = _is_pdf_creation_request(prompt)
+        code_project = _is_code_project_request(
+            prompt, has_project=bool(self._current_project_dir)
+        )
+        image_output = (not code_project) and (
+            _is_image_creation_request(prompt)
+            or bool(attached_images and _is_image_edit_request(prompt))
+        )
         request = {
             "model": self.model_var.get() or MODEL,
             "temperature": self.temp_var.get(),
@@ -1481,15 +1573,14 @@ Par quoi souhaitez-vous commencer ?"""
             "conversation_summary": self.conversation_summary,
             "chat_project_key": self._chat_project_key or "global",
             "editor_context": self._get_editor_context() or self._pending_editor_context,
-            "pdf_output": _is_pdf_creation_request(prompt),
-            "image_output": _is_image_creation_request(prompt)
-            or bool(attached_images and _is_image_edit_request(prompt)),
+            "pdf_output": pdf_output,
+            "image_output": image_output,
             "image_edit_source": (
                 str(attached_images[0])
-                if attached_images and _is_image_edit_request(prompt)
+                if attached_images and image_output and _is_image_edit_request(prompt)
                 else ""
             ),
-            "code_project": bool(_is_code_project_request(prompt)),
+            "code_project": code_project,
             "image_generator_available": bool(
                 image_generation and image_generation.is_ready()
             ),
@@ -1503,9 +1594,17 @@ Par quoi souhaitez-vous commencer ?"""
             ),
         }
 
-        if request.get("code_project") and not self._current_project_dir:
-            nom_projet = "mon_projet"
-            self._create_code_project(nom_projet)
+        if request["code_project"] and not self._current_project_dir:
+            nom = simpledialog.askstring(
+                "Nouveau projet de code",
+                "Nom du dossier du projet (cree dans {}) :".format(CODE_PROJECT_DIR),
+                initialvalue=_project_name_from_prompt(prompt),
+                parent=self,
+            )
+            if not nom or self._create_code_project(nom) is None:
+                request["code_project"] = False
+        if request["code_project"]:
+            self._start_code_progress(lbl, bubble)
 
         if request["pdf_output"]:
             request["large_output"] = True
@@ -1578,6 +1677,9 @@ Par quoi souhaitez-vous commencer ?"""
         model = request["model"]
         temperature = request["temperature"]
         system = request["system"]
+        if request.get("code_project"):
+            self._stream_code_project(request, lbl, bubble)
+            return
         if request.get("image_output"):
             request["web_enabled"] = False
             if not request.get("image_generator_available"):
@@ -1611,7 +1713,7 @@ Par quoi souhaitez-vous commencer ?"""
                 full = "[CREER_FICHIER: {}]\n{}\n[/CREER_FICHIER]".format(filename, document)
             else:
                 full = ""
-                self.ui_queue.put(("error", lbl, "Je n'ai pas pu rédiger un document PDF complet. Essayez de donner plus de détails sur le sujet.", bubble, request))
+                self.ui_queue.put(("error", lbl, "Je n'ai pas pu rédiger un document PDF complet. Essayez de donner plus de détails sur le sujet."))
                 return
             self.ui_queue.put(("done", lbl, full, bubble, request))
             return
@@ -1788,8 +1890,6 @@ Par quoi souhaitez-vous commencer ?"""
             self._schedule_chat_compaction(request, memory_history, full)
         except Exception as e:
             self.ui_queue.put(("error", lbl, str(e)))
-        finally:
-            self.after(0, self._finish)
 
     def _build_pdf_document(self, model, request):
         user_text = ""
@@ -2222,6 +2322,10 @@ Par quoi souhaitez-vous commencer ?"""
             pdf_output = pdf_requested or pdf_response or has_pdf_marker
             pdf_filename = getattr(self, "_requested_pdf_filename", "document.pdf")
             self._finish()
+            if request.get("code_project") and self._current_project_dir:
+                self._finish_code_project(full, lbl, bubble)
+                self._last_chat_activity = time.monotonic()
+                continue
             created_pdfs = self.check_ai_creation_commands(
                 full,
                 bubble,
@@ -2363,11 +2467,10 @@ Par quoi souhaitez-vous commencer ?"""
                 lbl.configure(text="Erreur : {}".format(detail))
             messagebox.showerror("Erreur de l'IA", detail)
             self._finish()
-        if self.streaming:
-            self._finish()
         self.after(50, self._process_ui_queue)
 
     def _finish(self):
+        self._stop_code_progress()
         self.streaming = False
         self._suppress_streaming = False
         self._pdf_generation_requested = False
@@ -3215,51 +3318,205 @@ Par quoi souhaitez-vous commencer ?"""
         except (OSError, ValueError, RuntimeError) as error:
             messagebox.showerror("Téléchargement impossible", str(error))
 
+    def _editor_call(self, names, *args):
+        """Appelle la premiere methode de l'editeur qui existe parmi `names`."""
+        if self.dev_window is None or not self.dev_window.winfo_exists():
+            return False
+        for name in names:
+            method = getattr(self.dev_window, name, None)
+            if callable(method):
+                try:
+                    method(*args)
+                    return True
+                except Exception as error:
+                    print("Editeur :", name, error)
+        return False
+
     def _create_code_project(self, nom_projet):
-        """Cree un dossier de projet de code dans ia_creations/projets/ et l'ouvre dans l'editeur."""
-        if not nom_projet:
-            nom_projet = "mon_projet"
-        nom_projet = nom_projet.strip()
-        nom_projet = re.sub(r'[<>:"/\\|?*]', "_", nom_projet)
-        if not nom_projet:
-            nom_projet = "mon_projet"
-
+        """Cree le dossier du projet et l'ouvre dans l'explorateur de l'editeur."""
+        nom = re.sub(r'[<>:"/\\|?*]', "_", str(nom_projet or "").strip()).strip(". ") or "mon_projet"
         CODE_PROJECT_DIR.mkdir(parents=True, exist_ok=True)
-        target = CODE_PROJECT_DIR / nom_projet
-
-        if target.exists():
+        target = CODE_PROJECT_DIR / nom
+        if target.exists() and any(target.iterdir()):
             if not messagebox.askyesno(
                 "Dossier existant",
-                "Le dossier '{}' existe deja.\nVoulez-vous l'utiliser pour ce projet ?".format(nom_projet),
+                "Le dossier '{}' existe deja et contient des fichiers.\n\n"
+                "Le reutiliser ? Les fichiers du meme nom seront remplaces.".format(nom),
             ):
                 self.status_var.set("Projet annule")
                 return None
-        else:
-            if not messagebox.askyesno(
-                "Creer le dossier",
-                "L'IA propose de creer le dossier de projet :\n{}\n\nAutoriser ?".format(target),
-            ):
-                self.status_var.set("Projet annule")
-                return None
-
         try:
             target.mkdir(parents=True, exist_ok=True)
         except OSError as error:
             messagebox.showerror("Erreur", "Impossible de creer le dossier : {}".format(error))
             return None
-
         self._current_project_dir = target
-        if self.dev_window is not None and self.dev_window.winfo_exists():
-            try:
-                self.dev_window.open_folder(str(target))
-            except Exception:
-                pass
-        try:
-            self.tabs.set("Editeur de code")
-        except Exception:
-            pass
+        self._editor_call(
+            ("open_folder", "open_project", "set_folder", "load_folder", "open_directory"),
+            str(target),
+        )
+        # La conversation en cours suit le projet au lieu d'etre remplacee au message suivant
+        self._save_chat_memory()
+        self._chat_project_key = self._current_chat_project_key()
         self.status_var.set("Projet ouvert : {}".format(target.name))
         return target
+
+    def _start_code_progress(self, lbl, bubble):
+        self._code_progress_active = True
+        self._code_progress_status = "Calisto prepare le projet"
+        try:
+            bar = ctk.CTkProgressBar(bubble, mode="indeterminate", width=260, height=10)
+            bar.pack(padx=16, pady=(0, 10), anchor="w")
+            bar.start()
+            self._code_progress_bar = bar
+        except Exception:
+            self._code_progress_bar = None
+        self._tick_code_progress(lbl, 0)
+
+    def _tick_code_progress(self, lbl, step):
+        if not self._code_progress_active:
+            return
+        if lbl.winfo_exists():
+            lbl.configure(text="\u270d {} {}".format(self._code_progress_status, "." * (step % 4)))
+        self._code_progress_job = self.after(400, self._tick_code_progress, lbl, step + 1)
+
+    def _stop_code_progress(self):
+        self._code_progress_active = False
+        if self._code_progress_job is not None:
+            try:
+                self.after_cancel(self._code_progress_job)
+            except Exception:
+                pass
+            self._code_progress_job = None
+        if self._code_progress_bar is not None:
+            try:
+                self._code_progress_bar.stop()
+                self._code_progress_bar.destroy()
+            except Exception:
+                pass
+            self._code_progress_bar = None
+
+    @staticmethod
+    def _code_progress_label(partial):
+        names = re.findall(r"\[CREER_FICHIER:\s*([^\]\r\n]+)\]", partial, re.IGNORECASE)
+        finished = len(re.findall(r"\[/CREER_FICHIER\]", partial, re.IGNORECASE))
+        if not names:
+            return "Calisto prepare le projet"
+        if finished >= len(names):
+            return "Calisto termine ({} fichier(s) ecrit(s))".format(finished)
+        return "Calisto ecrit {} ({} fichier(s) termine(s))".format(names[-1].strip(), finished)
+
+    def _stream_code_project(self, request, lbl, bubble):
+        """Genere le projet en silence : le code ne passe jamais par la conversation."""
+        system = (
+            "Tu es un developpeur web senior. Tu ecris des projets complets, propres et fonctionnels.\n"
+            "L'utilisateur est un debutant : il ne lit PAS le code dans la conversation. "
+            "Calisto enregistre tes fichiers dans le dossier du projet et il les ouvre dans l'editeur.\n\n"
+            "FORMAT DE REPONSE OBLIGATOIRE :\n"
+            "1. Une ou deux phrases en francais pour dire ce que tu construis. Aucun code.\n"
+            "2. Chaque fichier dans sa propre balise, exactement sous cette forme :\n"
+            "[CREER_FICHIER: index.html]\n"
+            "(code complet du fichier)\n"
+            "[/CREER_FICHIER]\n"
+            "3. Une conclusion de 2 a 4 phrases : role de chaque fichier et comment tester "
+            "(ouvrir index.html dans le navigateur). Aucun code.\n\n"
+            "REGLES :\n"
+            "- Aucun code en dehors des balises. Pas de blocs ``` ni autour ni a l'interieur des balises.\n"
+            "- Fichiers separes : index.html (structure), style.css (apparence), script.js "
+            "(comportement, seulement s'il est utile). Noms simples, sans dossier. "
+            "index.html relie style.css et script.js.\n"
+            "- Code complet (jamais de '...' ni de 'reste du code'), indente, commente en francais, "
+            "responsive (rem, %, flexbox ou grid), accessible (alt, labels, contrastes).\n"
+            "- Aucune bibliotheque ni CDN, aucune image externe : utilise des couleurs, degrads et CSS.\n"
+            "- Si le projet existe deja (voir le contexte ci-dessous), renvoie uniquement les fichiers "
+            "modifies, en entier.\n"
+            "- Reponds en francais."
+        )
+        context = request.get("editor_context") or ""
+        if context:
+            system += "\n\nFichiers actuels du projet (contexte) :\n" + context[:8000]
+        history = [
+            {"role": m["role"], "content": str(m.get("content", ""))[:1500]}
+            for m in request["history"][-6:]
+        ]
+        messages = [{"role": "system", "content": system}] + history
+        full = ""
+        try:
+            stream = ollama.chat(
+                model=request["model"],
+                messages=messages,
+                stream=True,
+                options={
+                    "temperature": min(float(request["temperature"]), 0.5),
+                    "num_ctx": 8192,
+                    "num_predict": 6144,
+                },
+            )
+            for chunk in stream:
+                full += chunk["message"]["content"]
+                self._code_progress_status = self._code_progress_label(full)
+            if not _extract_project_files(full):
+                raise RuntimeError(
+                    "Le modele n'a produit aucun fichier. Reformulez la demande avec plus de details."
+                )
+            self.ui_queue.put(("done", lbl, full, bubble, request))
+        except Exception as error:
+            self.ui_queue.put(("error", lbl, str(error)))
+
+    def _finish_code_project(self, full, lbl, bubble):
+        project_dir = self._current_project_dir
+        created, failed = [], []
+        for name, content in _extract_project_files(full):
+            try:
+                target = resolve_generated_file_path(name, output_dir=project_dir)
+                if len(content.encode("utf-8")) > MAX_GENERATED_FILE_BYTES:
+                    raise ValueError("fichier trop volumineux")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+                created.append(target)
+            except (OSError, ValueError) as error:
+                failed.append("{} ({})".format(name, error))
+        self._editor_call(("refresh_tree", "refresh_explorer", "refresh", "reload_tree"))
+        lines = [
+            "Projet « {} » : {} fichier(s) enregistre(s) dans :\n{}".format(
+                project_dir.name, len(created), project_dir
+            )
+        ]
+        lines += ["  ✓ {}".format(p.name) for p in created]
+        lines += ["  ✗ {}".format(item) for item in failed]
+        explanation = _project_explanation(full)
+        if explanation:
+            lines += ["", explanation]
+        lines += ["", "Les fichiers sont visibles dans l'onglet « Editeur de code »."]
+        display = "\n".join(lines)
+        if lbl.winfo_exists():
+            lbl.configure(text=display)
+        self._add_project_buttons(bubble, created)
+        self.messages.append({"role": "assistant", "content": display})
+        self._save_chat_memory()
+        self.status_var.set("Projet mis a jour : {}".format(project_dir.name))
+
+    def _add_project_buttons(self, bubble, created):
+        if not created or not bubble.winfo_exists():
+            return
+        index = next((p for p in created if p.suffix.lower() in (".html", ".htm")), created[0])
+        bar = ctk.CTkFrame(bubble, fg_color="transparent")
+        bar.pack(anchor="w", padx=14, pady=(0, 10))
+        ctk.CTkButton(
+            bar, text="Ouvrir dans l'editeur", width=150,
+            command=lambda: self._show_in_editor(index),
+            fg_color="#263547", hover_color="#34475c", font=ctk.CTkFont(size=11),
+        ).pack(side="left", padx=4)
+        if index.suffix.lower() in (".html", ".htm"):
+            ctk.CTkButton(
+                bar, text="Tester dans le navigateur", width=170,
+                command=lambda: webbrowser.open(index.as_uri()),
+                fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=11),
+            ).pack(side="left", padx=4)
+
+    def _show_in_editor(self, path):
+        self.tabs.set("Editeur de code")
+        self._editor_call(("open_file", "load_file", "open_path"), str(path))
 
     def handle_ai_creation_request(self, command_type, filepath, content, binary=False):
         if command_type == "fichier":
@@ -3332,7 +3589,7 @@ Par quoi souhaitez-vous commencer ?"""
             ):
                 try:
                     target_path.resolve().relative_to(self._current_project_dir.resolve())
-                    self.dev_window.refresh_tree()
+                    self._editor_call(("refresh_tree", "refresh_explorer", "refresh", "reload_tree"))
                 except ValueError:
                     pass
             return target_path
