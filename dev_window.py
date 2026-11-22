@@ -6059,6 +6059,49 @@ class DevWindow(ctk.CTkFrame):
                 except Exception:
                     pass
 
+        # Injecte automatiquement les liens CSS et JS manquants quand on preview un HTML
+        if extension == ".html" and self.current_folder:
+            css_files = sorted(
+                p for p in self.current_folder.glob("*.css")
+                if p.name != html_file.name
+            )
+            js_files = sorted(
+                p for p in self.current_folder.glob("*.js")
+            )
+
+            has_css_link = bool(re.search(r"<link\b[^>]*rel\s*=\s*[\"']stylesheet[\"'][^>]*>", content, re.IGNORECASE))
+            has_js_script = bool(re.search(r"<script\b[^>]*\bsrc\s*=[\"'][^\"']+\.js[\"'][^>]*>", content, re.IGNORECASE))
+
+            if css_files and not has_css_link:
+                css_path = css_files[0]
+                try:
+                    css_content = css_path.read_text(encoding="utf-8-sig")
+                    style_tag = "<style>\n{}\n</style>".format(css_content)
+                except Exception:
+                    style_tag = '<link rel="stylesheet" href="{}">'.format(css_path.name)
+
+                if re.search(r"<head[^>]*>", content, re.IGNORECASE):
+                    content = re.sub(r"<head[^>]*>", lambda m: m.group(0) + "\n" + style_tag, content, count=1, flags=re.IGNORECASE)
+                elif re.search(r"</head\s*>", content, re.IGNORECASE):
+                    content = re.sub(r"</head\s*>", style_tag + "\n</head>", content, count=1, flags=re.IGNORECASE)
+                elif re.search(r"<body[^>]*>", content, re.IGNORECASE):
+                    content = re.sub(r"<body[^>]*>", lambda m: m.group(0) + "\n" + style_tag, content, count=1, flags=re.IGNORECASE)
+                else:
+                    content = style_tag + "\n" + content
+
+            if js_files and not has_js_script:
+                js_path = js_files[0]
+                try:
+                    js_content = js_path.read_text(encoding="utf-8-sig")
+                    script_tag = "<script>\n{}\n</script>".format(js_content)
+                except Exception:
+                    script_tag = '<script src="{}"></script>'.format(js_path.name)
+
+                if re.search(r"</body\s*>", content, re.IGNORECASE):
+                    content = re.sub(r"</body\s*>", script_tag + "\n</body>", content, count=1, flags=re.IGNORECASE)
+                else:
+                    content = content + "\n" + script_tag
+
         return content
 
 

@@ -1,6 +1,7 @@
 import ast
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, simpledialog
+import tkinter as tk
 from PIL import Image, ImageTk
 import ollama
 import threading
@@ -257,31 +258,6 @@ def _project_explanation(response):
     text = re.sub(r"```.*?(?:```|\Z)", "", text, flags=re.DOTALL)
     text = re.sub(r"\[/?(?:CREER_FICHIER|CREER_PROJET)[^\]]*\]", "", text, flags=re.IGNORECASE)
     return re.sub(r"\n{3,}", "\n\n", text).strip()[:900]
-
-
-def _is_code_project_request(prompt):
-    """Detecte une demande d'aide au codage / creation de projet."""
-    normalized = (
-        unicodedata.normalize("NFKD", str(prompt))
-        .encode("ascii", "ignore")
-        .decode("ascii")
-        .casefold()
-    )
-    return bool(
-        re.search(
-            r"\b(?:" + CODE_PROJECT_ACTION_PATTERN + r")\b.{0,400}\b(?:" + CODE_PROJECT_SUBJECT_PATTERN + r")\b",
-            normalized,
-            re.S,
-        )
-        or re.search(
-            r"\b(?:" + CODE_PROJECT_SUBJECT_PATTERN + r")\b.{0,300}\b(?:" + CODE_PROJECT_ACTION_PATTERN + r")\b",
-            normalized,
-            re.S,
-        )
-        or re.search(r"\b(?:site|page|application|projet|script|html|css|javascript)\b", normalized, re.S)
-    )
-
-
 
 
 def _ask_project_folder(prompt_text):
@@ -787,10 +763,74 @@ def _pdf_filename_from_content(content, fallback="document.pdf"):
     return "{}.pdf".format(slug) if slug else (fallback or "document.pdf")
 
 
+# Themes de style PDF varies pour eviter toujours le meme rendu
+PDF_THEMES = [
+    {
+        "nom": "Classique",
+        "couleur_primaire": (24, 132, 98),
+        "couleur_secondaire": (45, 58, 72),
+        "couleur_accent": (34, 139, 230),
+        "couleur_fond": (255, 255, 255),
+        "couleur_titre": (24, 132, 98),
+        "couleur_sous_titre": (45, 58, 72),
+        "police_titre": "Helvetica",
+        "police_corps": "Helvetica",
+    },
+    {
+        "nom": "Nuit",
+        "couleur_primaire": (94, 123, 182),
+        "couleur_secondaire": (200, 205, 212),
+        "couleur_accent": (147, 112, 219),
+        "couleur_fond": (30, 35, 45),
+        "couleur_titre": (147, 112, 219),
+        "couleur_sous_titre": (94, 123, 182),
+        "police_titre": "Helvetica",
+        "police_corps": "Helvetica",
+    },
+    {
+        "nom": "Sable",
+        "couleur_primaire": (160, 103, 65),
+        "couleur_secondaire": (70, 55, 45),
+        "couleur_accent": (205, 133, 63),
+        "couleur_fond": (255, 255, 255),
+        "couleur_titre": (160, 103, 65),
+        "couleur_sous_titre": (70, 55, 45),
+        "police_titre": "Helvetica",
+        "police_corps": "Helvetica",
+    },
+    {
+        "nom": "Ocean",
+        "couleur_primaire": (0, 128, 128),
+        "couleur_secondaire": (30, 80, 100),
+        "couleur_accent": (0, 191, 255),
+        "couleur_fond": (255, 255, 255),
+        "couleur_titre": (0, 128, 128),
+        "couleur_sous_titre": (30, 80, 100),
+        "police_titre": "Helvetica",
+        "police_corps": "Helvetica",
+    },
+    {
+        "nom": "Foret",
+        "couleur_primaire": (34, 139, 34),
+        "couleur_secondaire": (0, 100, 0),
+        "couleur_accent": (50, 205, 50),
+        "couleur_fond": (255, 255, 255),
+        "couleur_titre": (0, 100, 0),
+        "couleur_sous_titre": (34, 139, 34),
+        "police_titre": "Helvetica",
+        "police_corps": "Helvetica",
+    },
+]
+
+
 class GeneratedDocumentPDF(FPDF):
-    def __init__(self, title):
+    _theme_index = 0
+
+    def __init__(self, title, theme=None):
         super().__init__()
         self.document_title = _safe_pdf_text(title)
+        self.theme = theme or PDF_THEMES[GeneratedDocumentPDF._theme_index % len(PDF_THEMES)]
+        GeneratedDocumentPDF._theme_index += 1
         self.set_margins(18, 20, 18)
         self.set_auto_page_break(auto=True, margin=18)
 
@@ -799,19 +839,19 @@ class GeneratedDocumentPDF(FPDF):
             return
         self.set_y(9)
         self.set_font("Helvetica", "", 8)
-        self.set_text_color(104, 119, 137)
+        self.set_text_color(*self.theme["couleur_secondaire"])
         self.cell(0, 5, self.document_title[:100], align="R")
-        self.set_draw_color(218, 226, 234)
+        self.set_draw_color(*self.theme["couleur_accent"])
         self.line(self.l_margin, 16, self.w - self.r_margin, 16)
         self.set_y(21)
 
     def footer(self):
         self.set_y(-14)
-        self.set_draw_color(218, 226, 234)
+        self.set_draw_color(*self.theme["couleur_accent"])
         self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
         self.set_y(-12)
         self.set_font("Helvetica", "", 8)
-        self.set_text_color(104, 119, 137)
+        self.set_text_color(*self.theme["couleur_secondaire"])
         self.cell(0, 8, "CALISTO  |  {}".format(self.page_no()), align="C")
 
 
@@ -996,7 +1036,7 @@ def write_html_pdf(target_path, html_content):
             pass
 
 
-def write_markdown_pdf(target_path, content):
+def write_markdown_pdf(target_path, content, theme=None):
     if _looks_like_html(content) and write_html_pdf(target_path, content):
         return
     if not _is_complete_pdf_document(content):
@@ -1015,16 +1055,17 @@ def write_markdown_pdf(target_path, content):
     if not title:
         title = "Document"
 
-    pdf = GeneratedDocumentPDF(title)
+    pdf = GeneratedDocumentPDF(title, theme=theme)
+    theme = pdf.theme
     pdf.set_title(title)
     pdf.set_author("Calisto")
     pdf.add_page()
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 24)
-    pdf.set_text_color(25, 45, 68)
+    pdf.set_text_color(*theme["couleur_titre"])
     pdf.set_x(pdf.l_margin)
     pdf.multi_cell(0, 11, _safe_pdf_text(title))
-    pdf.set_draw_color(34, 197, 139)
+    pdf.set_draw_color(*theme["couleur_accent"])
     pdf.set_line_width(1.1)
     pdf.line(pdf.l_margin, pdf.get_y() + 2, pdf.w - pdf.r_margin, pdf.get_y() + 2)
     pdf.ln(6)
@@ -1035,7 +1076,7 @@ def write_markdown_pdf(target_path, content):
             level = detail
             pdf.ln(2 if level == 2 else 1)
             taille_titre = 19 if level == 1 else 15 if level == 2 else 12
-            couleur_titre = (25, 45, 68) if level == 1 else (24, 132, 98)
+            couleur_titre = theme["couleur_titre"] if level == 1 else theme["couleur_sous_titre"]
             if pdf.get_y() + (8 if level == 1 else 7) + 12 > pdf.h - pdf.b_margin:
                 pdf.add_page()
             pdf.set_x(pdf.l_margin)
@@ -1049,21 +1090,21 @@ def write_markdown_pdf(target_path, content):
                 interligne_apres=0.12,
             )
             if level == 1:
-                pdf.set_draw_color(218, 226, 234)
+                pdf.set_draw_color(*theme["couleur_accent"])
                 pdf.line(pdf.l_margin, pdf.get_y() + 1, pdf.w - pdf.r_margin, pdf.get_y() + 1)
                 pdf.ln(3)
         elif kind == "paragraph":
             pdf.set_x(pdf.l_margin)
-            _pdf_write_runs(pdf, text, 10.5, 6.0, couleur=(45, 58, 72), interligne_apres=0.18)
+            _pdf_write_runs(pdf, text, 10.5, 6.0, couleur=theme["couleur_secondaire"], interligne_apres=0.18)
         elif kind == "list":
             x = pdf.l_margin + detail
             numerotee = bool(re.match(r"^\d+[.)]\s", str(text).strip()))
             if not numerotee:
                 y = pdf.get_y()
-                pdf.set_fill_color(34, 197, 139)
+                pdf.set_fill_color(*theme["couleur_accent"])
                 pdf.ellipse(x + 1, y + 2.6, 1.2, 1.2, style="F")
             pdf.set_x(x + 5)
-            _pdf_write_runs(pdf, text, 10.5, 5.8, couleur=(45, 58, 72), interligne_apres=0.06)
+            _pdf_write_runs(pdf, text, 10.5, 5.8, couleur=theme["couleur_secondaire"], interligne_apres=0.06)
         elif kind == "quote":
             debut = pdf.get_y()
             pdf.set_x(pdf.l_margin + 6)
@@ -1072,11 +1113,11 @@ def write_markdown_pdf(target_path, content):
                 text,
                 10,
                 6.3,
-                couleur=(59, 83, 106),
+                couleur=theme["couleur_secondaire"],
                 style="I",
                 interligne_apres=0.2,
             )
-            pdf.set_draw_color(24, 132, 98)
+            pdf.set_draw_color(*theme["couleur_accent"])
             pdf.set_line_width(0.9)
             pdf.line(pdf.l_margin + 1, debut, pdf.l_margin + 1, max(debut + 1, pdf.get_y() - 3.0))
             pdf.set_line_width(0.2)
@@ -1098,15 +1139,15 @@ def write_markdown_pdf(target_path, content):
                 for column_index, cell_lines in enumerate(wrapped):
                     x = pdf.l_margin + column_index * column_width
                     if row_index == 0:
-                        pdf.set_fill_color(24, 132, 98)
+                        pdf.set_fill_color(*theme["couleur_primaire"])
                         pdf.set_text_color(255, 255, 255)
                     else:
                         if row_index % 2:
-                            pdf.set_fill_color(247, 249, 251)
+                            pdf.set_fill_color(*theme["couleur_fond"])
                         else:
                             pdf.set_fill_color(255, 255, 255)
-                        pdf.set_text_color(45, 58, 72)
-                    pdf.set_draw_color(218, 226, 234)
+                        pdf.set_text_color(*theme["couleur_secondaire"])
+                    pdf.set_draw_color(*theme["couleur_accent"])
                     pdf.rect(x, y, column_width, row_height, style="DF")
                     pdf.set_xy(x + 3, y + 2)
                     pdf.multi_cell(
@@ -1118,7 +1159,7 @@ def write_markdown_pdf(target_path, content):
         elif kind == "code":
             if detail and detail.lower() not in ("markdown", "md", "text"):
                 pdf.set_font("Helvetica", "B", 8)
-                pdf.set_text_color(24, 132, 98)
+                pdf.set_text_color(*theme["couleur_accent"])
                 pdf.cell(0, 5, _safe_pdf_text(detail.upper()))
                 pdf.ln(5)
             pdf.set_fill_color(30, 41, 59)
@@ -1128,15 +1169,15 @@ def write_markdown_pdf(target_path, content):
             pdf.multi_cell(body_width - 4, 5.2, text or " ", fill=True)
             pdf.ln(2)
         elif kind == "warning":
-            pdf.set_fill_color(255, 247, 220)
-            pdf.set_text_color(130, 86, 20)
+            pdf.set_fill_color(theme["couleur_accent"][0], theme["couleur_accent"][1], theme["couleur_accent"][2])
+            pdf.set_text_color(255, 255, 255)
             pdf.set_font("Helvetica", "I", 9.5)
             pdf.set_x(pdf.l_margin)
             pdf.multi_cell(0, 6, text, fill=True)
             pdf.ln(2)
         elif kind == "rule":
             pdf.ln(2)
-            pdf.set_draw_color(218, 226, 234)
+            pdf.set_draw_color(*theme["couleur_accent"])
             pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
             pdf.ln(4)
 
@@ -1166,6 +1207,7 @@ def chat_with_web_search(
 ):
     conversation = [dict(message) for message in messages]
     search_count = 0
+    auto_search_done = False
     for round_index in range(MAX_WEB_SEARCH_ROUNDS + 1):
         can_call_tools = enabled and round_index < MAX_WEB_SEARCH_ROUNDS
         request = {
@@ -1180,6 +1222,26 @@ def chat_with_web_search(
         tool_calls = assistant_message.get("tool_calls", []) or []
         if not tool_calls:
             content = assistant_message.get("content", "")
+            if content and not auto_search_done:
+                # Le modele n'a pas appele l'outil (ex: qwen2.5:7b ne supporte pas le tool calling).
+                # On fait la recherche automatiquement cote Python et on reinjecte les resultats.
+                last_user = ""
+                for m in reversed(conversation):
+                    if m.get("role") == "user":
+                        last_user = m.get("content", "")
+                        break
+                if last_user:
+                    auto_search_done = True
+                    if on_search:
+                        on_search(last_user)
+                    result = web_search(last_user, max_results=5, region="fr-fr")
+                    conversation.append(
+                        {
+                            "role": "system",
+                            "content": "Resultats de recherche web automatiques pour la question de l'utilisateur :\n{}\n\nUtilise ces resultats pour repondre en francais, cites les sources si possible.".format(result),
+                        }
+                    )
+                    continue
             if content:
                 return content
             raise RuntimeError("Reponse vide de l'IA.")
@@ -1194,13 +1256,17 @@ def chat_with_web_search(
                 result = "Erreur : outil non autorise."
             else:
                 query = arguments.get("query", "")
+                region = arguments.get("region", "fr-fr")
+                timelimit = arguments.get("timelimit", None)
+                search_type = arguments.get("search_type", "text")
+                max_results = arguments.get("max_results", 5)
                 if search_count >= MAX_WEB_SEARCH_CALLS:
                     result = "Limite de recherches atteinte."
                 else:
                     search_count += 1
                     if on_search:
                         on_search(query)
-                    result = web_search(query)
+                    result = web_search(query, max_results=max_results, region=region, timelimit=timelimit, search_type=search_type)
             conversation.append({"role": "tool", "content": result})
     raise RuntimeError("Trop de tours de recherche.")
 
@@ -1222,6 +1288,8 @@ class App(ctk.CTk):
         self.inline_completion_var = ctk.BooleanVar(value=True)
         self.ai_can_create_files = ctk.BooleanVar(value=False)
         self.ai_can_modify_app = ctk.BooleanVar(value=False)
+        self.ai_can_delete_files = ctk.BooleanVar(value=False)
+        self._mem_facts_path = None
         self._image_generation_busy = False
         self._image_generation_active = False
         self._pending_generated_artifacts = {}
@@ -1240,6 +1308,15 @@ class App(ctk.CTk):
         self._code_started = 0.0
         self._code_chunks = 0
         self._chat_started = 0.0
+        self._queued_prompts = []
+        self._drain_scheduled = False
+        self._busy_frame = None
+        self._busy_bar = None
+        self._busy_label = None
+        self._busy_job = None
+        self._busy_started = 0.0
+        self._busy_status = ""
+        self._image_started = 0.0
 
         self.dev_window = None
         self.messages = []
@@ -1252,6 +1329,8 @@ class App(ctk.CTk):
         self._chat_memory_notice = ""
         self._memory_compaction_in_progress = set()
         self._chat_memory_generations = {}
+        self._mem_facts = {}
+        self._mem_facts_path = None
         self._last_chat_activity = time.monotonic()
         self.attached_files = []
         self.ui_queue = queue.Queue()
@@ -1260,6 +1339,7 @@ class App(ctk.CTk):
         self._pending_editor_context = ""
         self._learning_sujets = []
         self.learning_mode_window = None
+        self._preview_window = None
 
         self._build_ui()
         self._send_welcome_message()
@@ -1398,8 +1478,6 @@ Par quoi souhaitez-vous commencer ?"""
 
     # ---------- Chat ----------
     def on_enter(self, event):
-        if self.streaming:
-            return "break"
         if event.state & 0x1:
             return None
         self.send()
@@ -1493,6 +1571,55 @@ Par quoi souhaitez-vous commencer ?"""
             print("Erreur chargement mémoire conversation:", error)
             return "", [{"role": "assistant", "content": self._welcome_message}]
 
+    def _mem_facts_file(self, project_key):
+        if os.name == "nt":
+            state_root = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+        else:
+            state_root = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
+        digest = hashlib.sha256(project_key.encode("utf-8")).hexdigest()
+        return state_root / "Calisto" / "chat_memory" / ("facts_" + digest + ".json")
+
+    def _load_mem_facts(self, project_key):
+        self._mem_facts = {}
+        self._mem_facts_path = self._mem_facts_file(project_key)
+        if not self._mem_facts_path.exists():
+            return
+        try:
+            data = json.loads(self._mem_facts_path.read_text(encoding="utf-8"))
+            self._mem_facts = data.get("facts", {}) if isinstance(data, dict) else {}
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            self._mem_facts = {}
+
+    def _save_mem_facts(self):
+        if not self._mem_facts_path:
+            return
+        try:
+            self._mem_facts_path.parent.mkdir(parents=True, exist_ok=True)
+            self._mem_facts_path.write_text(
+                json.dumps({"facts": self._mem_facts}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError as error:
+            print("Erreur sauvegarde faits memoire:", error)
+
+    def _extract_mem_facts(self, text):
+        text_l = text.lower()
+        patterns = {
+            "nom": r"je m.appelle\s+([a-zà-ÿ\-]+)",
+            "ville": r"j.habite\s+(?:à|a)\s+([a-zà-ÿ\- ]+)",
+            "langage_prefere": r"je.pref.re\s+(?:le|la|l')\s+([a-zà-ÿ]+)",
+        }
+        for key, pattern in patterns.items():
+            m = re.search(pattern, text_l)
+            if m:
+                self._mem_facts[key] = m.group(1).strip()
+
+    def _mem_facts_text(self):
+        if not self._mem_facts:
+            return ""
+        items = ["{}: {}".format(k, v) for k, v in self._mem_facts.items()]
+        return "Faits connus sur l'utilisateur : " + "; ".join(items) + ". "
+
     def _render_chat_history(self):
         for widget in self.chat_container.winfo_children():
             widget.destroy()
@@ -1514,15 +1641,29 @@ Par quoi souhaitez-vous commencer ?"""
             return
         if self._chat_project_key is not None:
             self._save_chat_memory()
+            self._save_mem_facts()
         self._chat_project_key = project_key
         self.conversation_summary, self.messages = self._load_chat_memory(project_key)
+        self._load_mem_facts(project_key)
         self._render_chat_history()
 
     def send(self):
-        if self.streaming:
-            return
+        try:
+            self._send_inner()
+        except Exception as error:
+            traceback.print_exc()
+            self._finish()
+            messagebox.showerror("Erreur d'envoi", "{} : {}".format(type(error).__name__, error))
+
+    def _send_inner(self):
         prompt = self.entry.get("1.0", "end").strip()
         if not prompt and not self.attached_files:
+            return
+        if self._is_busy():
+            self._queue_prompt(prompt)
+            return
+        if self._is_simple_greeting(prompt):
+            self._answer_simple_greeting(prompt)
             return
         self._sync_chat_memory()
         self._last_chat_activity = time.monotonic()
@@ -1545,11 +1686,13 @@ Par quoi souhaitez-vous commencer ?"""
         self.attached_files = []
         self._refresh_file_chips()
         self.messages.append({"role": "user", "content": full})
+        self._extract_mem_facts(full)
         self._save_chat_memory()
+        self._save_mem_facts()
         self._add_bubble("Vous", prompt if prompt else "[Fichier(s)]", "user", animate=False)
         bubble, lbl = self._add_bubble("Calisto", "Calisto prepare sa reponse…", "assistant", animate=False)
         self.streaming = True
-        self.send_btn.configure(state="disabled", fg_color="#3b4653")
+        self._refresh_send_button()
         self.status_var.set("L'IA repond…")
         self._chat_started = time.monotonic()
         self._tick_chat_timer()
@@ -1557,7 +1700,7 @@ Par quoi souhaitez-vous commencer ?"""
             self._current_project_dir = None
         pdf_output = _is_pdf_creation_request(prompt)
         code_project = _is_code_project_request(
-            prompt, has_project=bool(self._current_project_dir)
+            prompt, has_project=bool(self._current_project_dir or (self.dev_window and self.dev_window.current_folder))
         )
         image_output = (not code_project) and (
             _is_image_creation_request(prompt)
@@ -1572,7 +1715,7 @@ Par quoi souhaitez-vous commencer ?"""
             "repeat_query": self._is_repeat_query,
             "history": [
                 dict(m)
-                for m in self.messages[-12 if self.conversation_summary else -20:]
+                for m in self.messages[-24 if self.conversation_summary else -40:]
             ],
             "memory_history": [dict(m) for m in self.messages],
             "conversation_summary": self.conversation_summary,
@@ -1600,16 +1743,26 @@ Par quoi souhaitez-vous commencer ?"""
         }
 
         if request["code_project"] and not self._current_project_dir:
-            nom = simpledialog.askstring(
-                "Nouveau projet de code",
-                "Nom du dossier du projet (cree dans {}) :".format(CODE_PROJECT_DIR),
-                initialvalue=_project_name_from_prompt(prompt),
-                parent=self,
-            )
-            if not nom or self._create_code_project(nom) is None:
-                request["code_project"] = False
+            if self.dev_window and self.dev_window.current_folder:
+                self._current_project_dir = self.dev_window.current_folder
+                self.status_var.set("Projet utilise : {}".format(self._current_project_dir.name))
+            else:
+                nom = simpledialog.askstring(
+                    "Nouveau projet de code",
+                    "Nom du dossier du projet (cree dans {}) :".format(CODE_PROJECT_DIR),
+                    initialvalue=_project_name_from_prompt(prompt),
+                    parent=self,
+                )
+                if not nom or self._create_code_project(nom) is None:
+                    request["code_project"] = False
         if request["code_project"]:
             self._start_code_progress(lbl, bubble)
+        elif request["image_output"]:
+            self._start_busy(bubble, "Calisto prépare la description de l'image")
+        elif request["pdf_output"]:
+            self._start_busy(bubble, "Calisto rédige le document PDF")
+        else:
+            self._start_busy(bubble, "Calisto réfléchit (le modèle peut mettre du temps à se charger)")
 
         if request["pdf_output"]:
             request["large_output"] = True
@@ -1620,6 +1773,125 @@ Par quoi souhaitez-vous commencer ?"""
         request["pdf_filename"] = self._requested_pdf_filename
         self._is_repeat_query = False
         threading.Thread(target=self._stream, args=(request, lbl, bubble), daemon=True).start()
+
+    def _is_busy(self):
+        return bool(self.streaming or self._image_generation_active)
+
+    def _refresh_send_button(self):
+        if self._is_busy():
+            self.send_btn.configure(text="Mettre en file", state="normal", fg_color="#3b4653")
+        else:
+            self.send_btn.configure(text="Envoyer", state="normal", fg_color=ACCENT)
+
+    def _queue_prompt(self, prompt):
+        self._queued_prompts.append((prompt, list(self.attached_files)))
+        self.entry.delete("1.0", "end")
+        self.attached_files = []
+        preview = (prompt or "[fichier]")[:50]
+        self.file_chips_label.configure(text="⏳ En attente : {}".format(preview))
+        self.status_var.set(
+            "{} message(s) en attente : il partira dès que Calisto aura fini.".format(
+                len(self._queued_prompts)
+            )
+        )
+
+    def _schedule_drain(self):
+        if self._queued_prompts and not self._drain_scheduled:
+            self._drain_scheduled = True
+            self.after(400, self._drain_queue)
+
+    def _drain_queue(self):
+        if self._is_busy():
+            self.after(500, self._drain_queue)
+            return
+        self._drain_scheduled = False
+        if not self._queued_prompts:
+            return
+        prompt, files = self._queued_prompts.pop(0)
+        draft = self.entry.get("1.0", "end").strip()
+        self.entry.delete("1.0", "end")
+        self.entry.insert("1.0", prompt)
+        self.attached_files = list(files)
+        self._refresh_file_chips()
+        self.send()
+        if draft:
+            self.entry.insert("1.0", draft)
+        self._schedule_drain()
+
+    def _start_busy(self, bubble, status):
+        self._stop_busy()
+        self._busy_started = time.monotonic()
+        self._busy_status = status
+        try:
+            frame = ctk.CTkFrame(bubble, fg_color="transparent")
+            frame.pack(fill="x", padx=16, pady=(0, 10))
+            bar = ctk.CTkProgressBar(frame, mode="indeterminate", width=260, height=10)
+            bar.pack(anchor="w")
+            bar.start()
+            label = ctk.CTkLabel(
+                frame, text="", font=ctk.CTkFont(size=11), text_color="#eab308", anchor="w"
+            )
+            label.pack(anchor="w", pady=(4, 0))
+            self._busy_frame, self._busy_bar, self._busy_label = frame, bar, label
+        except Exception:
+            self._busy_frame = None
+            return
+        self._tick_busy()
+
+    def _tick_busy(self):
+        if self._busy_frame is None:
+            return
+        elapsed = int(time.monotonic() - self._busy_started)
+        try:
+            self._busy_label.configure(
+                text="⏱ {}:{:02d} · {}".format(elapsed // 60, elapsed % 60, self._busy_status)
+            )
+        except Exception:
+            return
+        self._busy_job = self.after(500, self._tick_busy)
+
+    def _stop_busy(self):
+        if self._busy_job is not None:
+            try:
+                self.after_cancel(self._busy_job)
+            except Exception:
+                pass
+            self._busy_job = None
+        if self._busy_frame is not None:
+            try:
+                self._busy_bar.stop()
+                self._busy_frame.destroy()
+            except Exception:
+                pass
+        self._busy_frame = self._busy_bar = self._busy_label = None
+
+    def _is_simple_greeting(self, prompt):
+        simple = re.match(r"^(bonjour|salut|slt|coucou|hello|hi|merci|ça va|comment vas tu|comment allez vous|bonsoir|bonne nuit|aurevoir|au revoir|bye|cc|cv)\s*[!?.]*$", prompt, re.IGNORECASE)
+        if simple:
+            return True
+        mots = prompt.split()
+        return len(mots) <= 3 and bool(re.match(r"^(bonjour|salut|hello|hi|merci|hey|coucou|cc)$", prompt, re.IGNORECASE))
+
+    def _answer_simple_greeting(self, prompt):
+        reponses = [
+            "Bonjour ! Comment puis-je vous aider aujourd'hui ?",
+            "Salut ! Que puis-je faire pour vous ?",
+            "Bonjour ! Je suis à votre écoute. Que souhaitez-vous faire ?",
+        ]
+        import random
+        reponse = random.choice(reponses)
+        self.messages.append({"role": "user", "content": prompt})
+        self._extract_mem_facts(prompt)
+        self.messages.append({"role": "assistant", "content": reponse})
+        self._save_chat_memory()
+        self._save_mem_facts()
+        self.entry.delete("1.0", "end")
+        self.attached_files = []
+        self._refresh_file_chips()
+        self._add_bubble("Vous", prompt, "user", animate=False)
+        self._add_bubble("Calisto", reponse, "assistant", animate=False)
+        self._refresh_send_button()
+        self.status_var.set("Pret")
 
     def clear_chat(self):
         if self.streaming:
@@ -1679,6 +1951,13 @@ Par quoi souhaitez-vous commencer ?"""
             pass
 
     def _stream(self, request, lbl, bubble):
+        try:
+            self._stream_inner(request, lbl, bubble)
+        except Exception as error:
+            traceback.print_exc()
+            self.ui_queue.put(("error", lbl, "{} : {}".format(type(error).__name__, error)))
+
+    def _stream_inner(self, request, lbl, bubble):
         model = request["model"]
         temperature = request["temperature"]
         system = request["system"]
@@ -1723,7 +2002,7 @@ Par quoi souhaitez-vous commencer ?"""
             self.ui_queue.put(("done", lbl, full, bubble, request))
             return
         now = time.strftime("%A %d %B %Y a %H:%M", time.localtime())
-        system_with_context = "{}\n\nDate et heure actuelles : {}.\n".format(system, now)
+        system_with_context = "{}\n\nDate et heure actuelles : {}.\n{}".format(system, now, self._mem_facts_text())
 
         system_with_context += (
             "\nRegles de conversation :"
@@ -1773,6 +2052,10 @@ Par quoi souhaitez-vous commencer ?"""
             "\n- Document riche (CSS, images, colonnes, filigrane) : placez un document HTML complet (<!DOCTYPE html> ... </html>) entre les balises; Calisto le rend avec un vrai navigateur si disponible."
             "\n- Les images doivent pointer vers une URL http(s) ou un fichier local existant. Pas d'emoji ni de caracteres non latins : ils sont remplaces."
             "\n- Si le fichier est destine au projet ouvert, utilisez TOUJOURS la balise [CREER_FICHIER: nom.ext] avec le code complet a l'interieur. N'utilisez jamais de blocs Markdown ```filename=...``` pour creer des fichiers dans un projet, car ils ne sont pas enregistres sur le disque."
+            "\n\nSuppression de fichiers :"
+            "\n- Si l'utilisateur demande de supprimer un fichier dans le projet, utilisez la balise [SUPPRIMER_FICHIER: chemin/du/fichier.ext]."
+            "\n- Calisto demandera toujours confirmation a l'utilisateur avant de supprimer definitivement."
+            "\n- Ne supprimez jamais un fichier sans que l'utilisateur l'ait explicitement demande."
             "\n\nProjets de code - comportement professeur :"
             "\n- Quand l'utilisateur demande de l'aide pour coder ou creer un projet, agis comme un professeur patient."
             "\n- Guide par indices et questions, ne donne pas toute la solution d'un coup."
@@ -1785,6 +2068,10 @@ Par quoi souhaitez-vous commencer ?"""
             "\n- Explique chaque fichier et chaque ligne de code simplement, pour un debutant."
             "\n- Encourage l'utilisateur a tester et a corriger lui-même ses erreurs."
             "\n- Ne bascule pas vers l'editeur sans avoir cree le dossier de projet et obtenu l'accord."
+            "\n- Si un dossier de projet est ouvert dans l'editeur (contexte ci-dessus), modifie les fichiers existants avec [CREER_FICHIER: nom.ext] au lieu d'en creer de nouveaux. "
+            "Ne genere jamais de code en bloc Markdown dans la conversation : tout le code doit etre dans des balises [CREER_FICHIER]."
+            "\n- Si l'utilisateur demande d'enrichir ou ameliorer un site existant, ajoute ou modifie les fichiers pertinents uniquement, ne recreate pas tout le projet."
+            "\n- Pour les images d'illustration, le sujet de l'image doit correspondre exactement au sujet du site. Aucune image hors sujet."
         )
         if request["pdf_output"]:
             system_with_context += (
@@ -1861,10 +2148,14 @@ Par quoi souhaitez-vous commencer ?"""
                 self.ui_queue.put(("done", lbl, full, bubble, request))
                 self._schedule_chat_compaction(request, memory_history, full)
                 return
-            num_ctx = 8192 if request["large_output"] else 4096
-            num_predict = 6144 if request["large_output"] else 768
+            num_ctx = 8192 if request["large_output"] else 2048
+            num_predict = 6144 if request["large_output"] else 384
             if request.get("code_project"):
                 num_predict = 12000
+            elif request.get("pdf_output"):
+                num_predict = 4096
+            elif request.get("image_output"):
+                num_predict = 256
             stream = ollama.chat(
                 model=model,
                 messages=msgs,
@@ -1911,26 +2202,25 @@ Par quoi souhaitez-vous commencer ?"""
                 "content": (
                     "Tu rediges un document en francais au format Markdown, d'apres la demande. "
                     "Reponds UNIQUEMENT avec le document, sans phrase d'introduction ni commentaire. "
-                    "Le document doit etre TRES LONG, COMPLET et detaille : introduction, plusieurs sections developpees sur plusieurs paragraphes chacune, "
-                    "et une conclusion developpee. Chaque section doit contenir au moins 3 paragraphes riches, precises et exhaustifs. "
-                    "N'aie pas peur d'ecrire beaucoup : un chapitre peut prendre une page complete, c'est preferable a 2 pauvres lignes. "
-                    "Regles de format strictes :"
+                    "Le document doit etre COMPLET et detaille, avec une mise en page variee et riche. "
+                    "Regles de format :"
                     "- La premiere ligne est le titre : # Titre."
-                    "- Chaque section commence sur sa propre ligne par ## Titre de section. "
-                    "N'utilise pas **gras** a la place des titres."
-                    "- Un retour a la ligne entre chaque titre, paragraphe et element de liste."
-                    "- Les listes utilisent -  au debut de chaque ligne."
-                    "- Le code et les balises HTML s'ecrivent entre balises HTML, jamais en texte brut."
-                    "- Utilise des emojis pour illuminer certains titres et sections (varie-les a chaque document)."
-                    "- Inclus des encadrés, des listes a puces, des comparaisons, des exemples concrets, des anecdotes ou des cas d'usage."
-                    "- VARIE le style d'ecriture a chaque document : tantot pedagogique, tantot journalistique, tantot technique, tantot narratif. "
-                    "Ne reuse jamais la meme structure que precedemment. Change l'ordre des sections, le ton et la mise en page a chaque fois."
-                    "- Ne mentionne JAMAIS que le document a ete genere par une IA, par Calisto, ou par un assistant. "
-                    "Ne signe pas le document, n'ajoute pas de mention 'Cree par Calisto', 'Genere par IA' ou similaire. "
+                    "- Utilise des sections avec ## et des sous-sections avec ### quand c'est pertinent."
+                    "- ALTERNE les formats selon le sujet : parfois introduction courte, parfois directe, parfois historique, parfois pratique."
+                    "- Inclus DES TABLEAUX Markdown quand c'est utile (comparaisons, avantages/inconvenients, etapes, donnees)."
+                    "- Inclus des CITATIONS > pour une anecdote, un conseil ou un encadre."
+                    "- Inclus des LISTES a puces (-) ou numerotees (1.) pour enumerer."
+                    "- Inclus des ENCADRES avec ``` pour des exemples de code ou des blocs d'info."
+                    "- Utilise des EMOJIS pour varier les titres et sections."
+                    "- VARIE radicalement la structure a chaque document : un document peut commencer par un tableau, un autre par une citation, un autre par une liste, un autre par du texte direct."
+                    "- Ne reuse JAMAIS la meme structure que precedemment. Change l'ordre des sections, le ton et la mise en page a chaque fois."
+                    "- Le ton doit dependre du sujet : pedagogique, journalistique, technique, narratif, ou pratique."
+                    "- Ecris assez pour couvrir le sujet en profondeur, mais ne remplis pas inutilement."
+                    "- Ne mentionne JAMAIS que le document a ete genere par une IA, par Calisto, ou par un assistant."
+                    "Ne signe pas le document, n'ajoute pas de mention 'Cree par Calisto', 'Genere par IA' ou similaire."
                     "Le document doit paraitre redige directement pour l'utilisateur."
-                    "- Base-toi UNIQUEMENT sur les informations fournies dans la demande. "
-                    "Si tu ne connais pas le sujet, n'invente aucun fait, produit ou chiffre : "
-                    "ecris un document court et indique ce qui manque."
+                    "- Base-toi UNIQUEMENT sur les informations fournies dans la demande."
+                    "Si tu ne connais pas le sujet, n'invente aucun fait, produit ou chiffre : ecris un document court et indique ce qui manque."
                     "- Contexte (a utiliser seulement si la demande parle de Calisto) : "
                     "Calisto est une application de bureau Windows, ecrite en Python avec CustomTkinter. "
                     "C'est un assistant IA local pour debutants en developpement web, qui fonctionne hors ligne "
@@ -1947,6 +2237,7 @@ Par quoi souhaitez-vous commencer ?"""
             {"role": "user", "content": user_text},
         ]
         for attempt in range(3):
+            self._busy_status = "Calisto rédige le document (essai {}/3)".format(attempt + 1)
             result = ollama.chat(
                 model=model,
                 messages=messages,
@@ -1954,7 +2245,7 @@ Par quoi souhaitez-vous commencer ?"""
                 options={
                     "temperature": 0.5 if attempt == 0 else 0.3,
                     "num_ctx": 8192,
-                    "num_predict": 12000,
+                    "num_predict": 24000,
                 },
             )
             response = (result.get("message", {}).get("content") or "").strip()
@@ -1970,9 +2261,10 @@ Par quoi souhaitez-vous commencer ?"""
                 {
                     "role": "user",
                     "content": (
-                        "Format incorrect ou document trop court. Recommence : un titre # ... sur la premiere ligne, "
-                        "au moins 3 sections ## avec plusieurs paragraphes riches chacune, une conclusion developpee, "
-                        "des listes, des emojis et des exemples. Uniquement le document, tres complet et detaille."
+                        "Format incorrect ou document trop court. Recommence : un titre # sur la premiere ligne, "
+                        "des sections ## et ### variees, des tableaux Markdown, des citations >, des listes a puces et numerotees, "
+                        "des encadrés de code, des exemples concrets. Change la structure et le ton a chaque document. "
+                        "Uniquement le document, tres complet et detaille."
                     ),
                 }
             )
@@ -2031,14 +2323,20 @@ Par quoi souhaitez-vous commencer ?"""
                     text = "children coloring page, black bold outlines on white background, " + text
                 if est_plusieurs_personnes and not re.search(r"separate|distinct|space between|do not merge", text, re.I):
                     text = "multiple separate figures, distinct figures, space between them, do not merge, " + text
+                quality = "highly detailed, sharp, professional photography, 8k resolution, masterpiece, "
+                if not text.lower().startswith(quality):
+                    text = quality + text
                 return text
         except Exception:
             pass
         fallback = user_text.replace("[", "").replace("]", "")
+        quality = "highly detailed, sharp, professional photography, 8k resolution, masterpiece, "
         if est_coloriage:
             fallback = "children coloring page, black bold outlines on white background, " + fallback
         if est_plusieurs_personnes:
             fallback = "multiple separate figures, distinct figures, space between them, do not merge, " + fallback
+        if not fallback.lower().startswith(quality):
+            fallback = quality + fallback
         return fallback
 
     def _describe_image(self, path):
@@ -2233,7 +2531,7 @@ Par quoi souhaitez-vous commencer ?"""
         except Exception as error:
             self.ui_queue.put(("memory_error", project_key, generation, str(error)))
 
-    def _process_ui_queue(self):
+    def _process_ui_queue_inner(self):
         token_updates = {}
         done_events = []
         error_events = []
@@ -2472,15 +2770,26 @@ Par quoi souhaitez-vous commencer ?"""
                 lbl.configure(text="Erreur : {}".format(detail))
             messagebox.showerror("Erreur de l'IA", detail)
             self._finish()
-        self.after(50, self._process_ui_queue)
+    def _process_ui_queue(self):
+        try:
+            self._process_ui_queue_inner()
+        except Exception:
+            traceback.print_exc()
+            self._finish()
+            self.status_var.set("Erreur interne : voir calisto_log.txt")
+        finally:
+            self.after(50, self._process_ui_queue)
 
     def _finish(self):
         self._stop_code_progress()
+        self._stop_busy()
         self.streaming = False
         self._suppress_streaming = False
         self._pdf_generation_requested = False
-        self.send_btn.configure(state="normal", fg_color=ACCENT)
+        self._save_mem_facts()
+        self._refresh_send_button()
         self.status_var.set("Pret")
+        self._schedule_drain()
 
     def _get_editor_context(self):
         if self.dev_window is not None and self.dev_window.winfo_exists():
@@ -2652,6 +2961,34 @@ Par quoi souhaitez-vous commencer ?"""
         pattern3 = r"\[CREER_PROJET:\s*([^\]]+)\]"
         for nom_projet in re.findall(pattern3, text, re.IGNORECASE):
             self._create_code_project(nom_projet.strip())
+        # Suppression de fichiers : [SUPPRIMER_FICHIER: chemin]
+        pattern4 = r"\[SUPPRIMER_FICHIER:\s*([^\]]+)\]"
+        for filepath in re.findall(pattern4, text, re.IGNORECASE):
+            self.handle_ai_delete_request(filepath.strip())
+        # Blocs de code Markdown non proteges (hors CREER_FICHIER) : les convertir en fichiers
+        code_block_pattern = r"```(?:\w+)?\s*\n(.*?)\n```"
+        for block_match in re.finditer(code_block_pattern, text, re.DOTALL):
+            block_content = block_match.group(1).strip()
+            # Ignorer les blocs vides ou trop courts
+            if len(block_content) < 10:
+                continue
+            # Deviner le nom du fichier selon le langage ou le contenu
+            first_line = block_content.split("\n")[0].strip().lower()
+            if "<!doctype html" in first_line or "<html" in first_line:
+                guessed_name = "index.html"
+            elif "body" in first_line and "{" in first_line:
+                guessed_name = "style.css"
+            elif "function" in first_line or "const " in first_line or "let " in first_line:
+                guessed_name = "script.js"
+            else:
+                guessed_name = "fichier.txt"
+            target_path = self.handle_ai_creation_request(
+                "fichier",
+                guessed_name,
+                block_content,
+            )
+            if target_path and target_path.suffix.lower() == ".pdf":
+                created_pdfs.append(target_path)
         return created_pdfs
 
     def _stage_pdf_artifact(self, filename, content, bubble, request=None):
@@ -3087,6 +3424,8 @@ Par quoi souhaitez-vous commencer ?"""
             )
             return
         self._image_generation_active = True
+        self._image_started = time.monotonic()
+        self._refresh_send_button()
         self._image_progress_value = 0
         self._image_progress_job = None
         try:
@@ -3135,9 +3474,19 @@ Par quoi souhaitez-vous commencer ?"""
                 if source:
                     init_path = self._prepare_init_image(source, output_path)
                 try:
-                    result = image_generation.generate(
-                        prompt, output_path, init_image=init_path, strength=0.6
-                    )
+                    kwargs = {}
+                    if init_path is not None:
+                        kwargs = {"init_image": init_path, "strength": 0.6}
+                    ratio = "1:1"
+                    pr = (prompt or "").lower()
+                    if re.search(r"\b(?:paysage|largeur|16:9|cinéma|cinema|wide|panoramique)\b", pr):
+                        ratio = "16:9"
+                    elif re.search(r"\b(?:portrait|hauteur|9:16|vertical|écran.*téléphone|phone)\b", pr):
+                        ratio = "9:16"
+                    elif re.search(r"\b(?:3:4|4:3|carré|carré.*3:4|carré.*4:3)\b", pr):
+                        ratio = "3:4" if "3:4" in pr else "4:3"
+                    kwargs["aspect_ratio"] = ratio
+                    result = image_generation.generate(prompt, output_path, **kwargs)
                 finally:
                     if init_path is not None:
                         Path(init_path).unlink(missing_ok=True)
@@ -3188,10 +3537,15 @@ Par quoi souhaitez-vous commencer ?"""
         else:
             delay = 2000
         try:
+            elapsed = int(time.monotonic() - self._image_started)
             if self._image_progress_bar is not None:
                 self._image_progress_bar.set(self._image_progress_value / 100)
             if self._image_progress_pct is not None:
                 self._image_progress_pct.configure(text="{}%".format(self._image_progress_value))
+            if self._image_progress_label is not None:
+                self._image_progress_label.configure(
+                    text="Génération de l'image… ⏱ {}:{:02d}".format(elapsed // 60, elapsed % 60)
+                )
         except Exception:
             pass
         self._image_progress_job = self.after(delay, self._animate_image_progress)
@@ -3220,6 +3574,8 @@ Par quoi souhaitez-vous commencer ?"""
             self._image_progress_bar = None
             self._image_progress_label = None
             self._image_progress_pct = None
+        self._refresh_send_button()
+        self._schedule_drain()
 
     def _handle_artifact_event(self, event):
         kind = event[0]
@@ -3426,7 +3782,14 @@ Par quoi souhaitez-vous commencer ?"""
         if not self.streaming:
             return
         elapsed = int(time.monotonic() - self._chat_started)
-        self.status_var.set("L'IA répond… ⏱ {}:{:02d}".format(elapsed // 60, elapsed % 60))
+        queued = len(self._queued_prompts)
+        self.status_var.set(
+            "L'IA répond… ⏱ {}:{:02d}{}".format(
+                elapsed // 60,
+                elapsed % 60,
+                " · {} message(s) en attente".format(queued) if queued else "",
+            )
+        )
         self.after(1000, self._tick_chat_timer)
 
     @staticmethod
@@ -3460,7 +3823,16 @@ Par quoi souhaitez-vous commencer ?"""
             "index.html relie style.css et script.js.\n"
             "- Code complet (jamais de '...' ni de 'reste du code'), indente, commente en francais, "
             "responsive (rem, %, flexbox ou grid), accessible (alt, labels, contrastes).\n"
+            "- Si le projet existe deja (voir le contexte ci-dessous), renvoie UNIQUEMENT les fichiers modifies, en entier. "
+            "Ne recree pas les fichiers non modifies.\n"
             "- Aucune bibliotheque ni CDN, aucune image externe : utilise des couleurs, degrads et CSS.\n"
+            "- IMAGES : quand le sujet s'y prete (fusée, espace, paysage, objet, personne, etc.), "
+            "ajoute des balises <img src=\"images/nom-image.png\" alt=\"description\" "
+            "data-calisto-image-prompt=\"decaisonne precise de l'image a generer en anglais\">\n"
+            "dans le HTML. Une image par section principale. Pas plus de 4 images par site.\n"
+            "Le nom du fichier doit etre simple (sans espace, sans accent, ex: fusee.png, espace.png).\n"
+            "Le champ data-calisto-image-prompt doit contenir une description en anglais pour FLUX.1-schnell.\n"
+            "NE genere jamais d'image hors sujet : le sujet de l'image doit correspondre exactement au sujet du site.\n"
             "- Si le projet existe deja (voir le contexte ci-dessous), renvoie uniquement les fichiers "
             "modifies, en entier.\n"
             "- Reponds en francais."
@@ -3498,7 +3870,11 @@ Par quoi souhaitez-vous commencer ?"""
             self.ui_queue.put(("error", lbl, str(error)))
 
     def _finish_code_project(self, full, lbl, bubble):
-        project_dir = self._current_project_dir
+        project_dir = self._current_project_dir or (self.dev_window.current_folder if self.dev_window else None)
+        if project_dir is None:
+            self.ui_queue.put(("error", lbl, "Aucun dossier de projet cible. Ouvrez un dossier dans l'editeur ou creez un projet."))
+            self._finish()
+            return
         created, failed = [], []
         for name, content in _extract_project_files(full):
             try:
@@ -3510,6 +3886,10 @@ Par quoi souhaitez-vous commencer ?"""
                 created.append(target)
             except (OSError, ValueError) as error:
                 failed.append("{} ({})".format(name, error))
+        # Generer les images d'illustration pour le site (balises avec data-calisto-image-prompt)
+        html_files = [p for p in created if p.suffix.lower() in (".html", ".htm")]
+        if html_files and image_generation and image_generation.is_ready():
+            self._generate_site_images(project_dir, html_files[0])
         self._editor_call(("refresh_tree", "refresh_explorer", "refresh", "reload_tree"))
         lines = [
             "Projet « {} » : {} fichier(s) enregistre(s) dans :\n{}".format(
@@ -3529,6 +3909,61 @@ Par quoi souhaitez-vous commencer ?"""
         self.messages.append({"role": "assistant", "content": display})
         self._save_chat_memory()
         self.status_var.set("Projet mis a jour : {}".format(project_dir.name))
+
+    def _generate_site_images(self, project_dir, html_path):
+        """Genere les images d'illustration marquees dans le HTML et met a jour les src."""
+        try:
+            html_content = html_path.read_text(encoding="utf-8")
+        except Exception:
+            return
+
+        pattern = re.compile(
+            r'<img\s+[^>]*data-calisto-image-prompt="([^"]*)"[^>]*>',
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        images_dir = project_dir / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+
+        def remplacer(match):
+            prompt = match.group(1).strip()
+            if not prompt:
+                return match.group(0)
+
+            safe_name = re.sub(r"[^a-z0-9]+", "-", prompt.lower()).strip("-")[:40] or "image"
+            output_path = images_dir / (safe_name + ".png")
+
+            if output_path.exists():
+                return '<img src="images/{}" alt="{}">'.format(output_path.name, prompt[:80])
+
+            try:
+                kwargs = {"aspect_ratio": "16:9"}
+                image_generation.generate(prompt, output_path, **kwargs)
+                if output_path.exists():
+                    return '<img src="images/{}" alt="{}">'.format(output_path.name, prompt[:80])
+            except Exception as error:
+                print("Erreur generation image site:", error)
+
+            return match.group(0)
+
+        nouveau_html = pattern.sub(remplacer, html_content)
+
+        if nouveau_html != html_content:
+            try:
+                html_path.write_text(nouveau_html, encoding="utf-8")
+            except Exception:
+                pass
+
+        # Ajouter du CSS responsive pour les images dans style.css s'il existe
+        style_path = project_dir / "style.css"
+        if style_path.exists():
+            try:
+                css = style_path.read_text(encoding="utf-8")
+                if "img" not in css.lower() or "max-width" not in css.lower():
+                    css += "\n\n/* Images responsive - Calisto */\nimg {\n  max-width: 100%;\n  height: auto;\n  display: block;\n  margin: 0 auto;\n  border-radius: 8px;\n}\n.section-image {\n  text-align: center;\n  margin: 2rem 0;\n}\n"
+                    style_path.write_text(css, encoding="utf-8")
+            except Exception:
+                pass
 
     def _add_project_buttons(self, bubble, created):
         if not created or not bubble.winfo_exists():
@@ -3632,6 +4067,47 @@ Par quoi souhaitez-vous commencer ?"""
         except Exception as e:
             messagebox.showerror("Erreur de creation", "Impossible de creer le fichier : {}".format(str(e)))
         return None
+
+    def handle_ai_delete_request(self, filepath):
+        """Supprime un fichier avec confirmation utilisateur."""
+        if not self.ai_can_delete_files.get():
+            if not messagebox.askyesno(
+                "Autorisation IA",
+                "L'IA demande a supprimer un fichier :\n{}\n\nAutoriser cette action ?".format(filepath),
+            ):
+                self.status_var.set("Suppression refusee")
+                return False
+
+        target_path = Path(filepath)
+        if not target_path.exists():
+            self.status_var.set("Fichier introuvable : {}".format(target_path.name))
+            return False
+
+        if not messagebox.askyesno(
+            "Confirmer la suppression",
+            "Etes-vous sur de vouloir supprimer définitivement ce fichier ?\n\n{}".format(target_path),
+        ):
+            self.status_var.set("Suppression annulee")
+            return False
+
+        try:
+            target_path.unlink()
+            self.status_var.set("Fichier supprime : {}".format(target_path.name))
+            # Rafraichir l'arbre de l'editeur si le fichier est dans le projet ouvert
+            if (
+                self.dev_window is not None
+                and self.dev_window.winfo_exists()
+                and self._current_project_dir is not None
+            ):
+                try:
+                    target_path.resolve().relative_to(self._current_project_dir.resolve())
+                    self._editor_call(("refresh_tree", "refresh_explorer", "refresh", "reload_tree"))
+                except ValueError:
+                    pass
+            return True
+        except OSError as error:
+            messagebox.showerror("Erreur de suppression", "Impossible de supprimer le fichier : {}".format(error))
+            return False
 
     def attach_file(self):
         path = filedialog.askopenfilename(title="Choisir un fichier", filetypes=[("Tous", "*.*"), ("Texte", "*.txt *.md *.py *.csv *.json"), ("PDF", "*.pdf"), ("Images", "*.png *.jpg *.jpeg *.webp")])
@@ -3848,6 +4324,7 @@ Par quoi souhaitez-vous commencer ?"""
             ctk.CTkSwitch(body, text="Suggestions de code IA en direct (editeur)", variable=self.inline_completion_var, font=ctk.CTkFont(size=13), text_color=TEXT_MAIN),
             ctk.CTkSwitch(body, text="Autoriser l'IA a creer des fichiers", variable=self.ai_can_create_files, font=ctk.CTkFont(size=13), text_color=TEXT_MAIN),
             ctk.CTkSwitch(body, text="Autoriser l'IA a modifier l'application", variable=self.ai_can_modify_app, font=ctk.CTkFont(size=13), text_color=TEXT_MAIN),
+            ctk.CTkSwitch(body, text="Autoriser l'IA a supprimer des fichiers", variable=self.ai_can_delete_files, font=ctk.CTkFont(size=13), text_color=TEXT_MAIN),
         ]:
             sw.grid(row=row_idx[0], column=0, columnspan=2, sticky="w", pady=5)
             row_idx[0] += 1
@@ -4023,6 +4500,8 @@ Par quoi souhaitez-vous commencer ?"""
                         img_lbl = ctk.CTkLabel(row, image=photo, text="")
                         img_lbl.image = photo
                         img_lbl.grid(row=0, column=0, padx=10, pady=8)
+                        img_lbl.bind("<Enter>", lambda e, pp=p: self._show_image_preview(pp, e.x_root, e.y_root))
+                        img_lbl.bind("<Leave>", lambda e: self._hide_image_preview())
                     except Exception:
                         ctk.CTkLabel(row, text="[img]", width=30).grid(row=0, column=0, padx=10, pady=8)
                 elif kind == "document" and p.suffix.lower() == ".pdf":
@@ -4096,6 +4575,31 @@ Par quoi souhaitez-vous commencer ?"""
             self.status_var.set("Fichier supprime : {}".format(p.name))
         except Exception as error:
             messagebox.showerror("Suppression impossible", str(error))
+
+    def _show_image_preview(self, path, x, y):
+        self._hide_image_preview()
+        try:
+            win = tk.Toplevel(self)
+            win.overrideredirect(True)
+            win.attributes("-topmost", True)
+            with Image.open(path) as im:
+                im.thumbnail((420, 420))
+                photo = ImageTk.PhotoImage(im)
+            lbl = ctk.CTkLabel(win, image=photo, text="")
+            lbl.image = photo
+            lbl.pack(padx=4, pady=4)
+            win.geometry("+{}+{}".format(x + 12, y + 12))
+            self._preview_window = win
+        except Exception:
+            pass
+
+    def _hide_image_preview(self):
+        if self._preview_window is not None:
+            try:
+                self._preview_window.destroy()
+            except Exception:
+                pass
+            self._preview_window = None
 
     def open_learning_mode(self):
         if self.streaming:

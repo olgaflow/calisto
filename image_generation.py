@@ -232,10 +232,18 @@ def _executable():
     return executable
 
 
-def generate(prompt, output_path, on_output=None, init_image=None, strength=0.6):
+def generate(prompt, output_path, on_output=None, init_image=None, strength=0.6, aspect_ratio="1:1"):
     if not is_ready():
         raise RuntimeError("Le moteur FLUX n'est pas installé ou ses modèles sont incomplets.")
     models = {name: model_dir() / name for name, _, _, _ in MODEL_FILES}
+    aspect_map = {
+        "1:1": (1024, 1024),
+        "16:9": (1344, 768),
+        "9:16": (768, 1344),
+        "3:4": (896, 1152),
+        "4:3": (1152, 896),
+    }
+    width, height = aspect_map.get(aspect_ratio, (1024, 1024))
     command = [
         str(_executable()),
         "--diffusion-model",
@@ -251,7 +259,7 @@ def generate(prompt, output_path, on_output=None, init_image=None, strength=0.6)
         "-o",
         str(output_path),
         "--cfg-scale",
-        "1.0",
+        "1.5",
         "--sampling-method",
         "euler",
         "--steps",
@@ -260,9 +268,9 @@ def generate(prompt, output_path, on_output=None, init_image=None, strength=0.6)
         "--auto-fit",
         "on",
         "--width",
-        "1024",
+        str(width),
         "--height",
-        "1024",
+        str(height),
         "--offload-to-cpu",
     ]
     if init_image:
