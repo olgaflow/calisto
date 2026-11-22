@@ -18,6 +18,7 @@ import random
 import time
 import unicodedata
 import html
+import uuid
 from pathlib import Path
 from ddgs import DDGS
 from PyPDF2 import PdfReader
@@ -1338,8 +1339,15 @@ class App(ctk.CTk):
         self._is_repeat_query = False
         self._pending_editor_context = ""
         self._learning_sujets = []
+        self._session_id = "sess_" + uuid.uuid4().hex[:8]
         self.learning_mode_window = None
         self._preview_window = None
+
+        # Dossier de creations separe par session (images, PDFs, pending)
+        global IA_CREATIONS_DIR
+        base_state = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Calisto"
+        IA_CREATIONS_DIR = base_state / "ia_creations" / ("session_" + self._session_id)
+        IA_CREATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
         self._build_ui()
         self._send_welcome_message()
@@ -1499,7 +1507,7 @@ Par quoi souhaitez-vous commencer ?"""
         else:
             project_path = None
         if project_path is None:
-            return "global"
+            return "session_{}_global".format(self._session_id)
         resolved = str(project_path.resolve())
         return resolved.casefold() if os.name == "nt" else resolved
 
@@ -3697,7 +3705,9 @@ Par quoi souhaitez-vous commencer ?"""
         """Cree le dossier du projet et l'ouvre dans l'explorateur de l'editeur."""
         nom = re.sub(r'[<>:"/\\|?*]', "_", str(nom_projet or "").strip()).strip(". ") or "mon_projet"
         CODE_PROJECT_DIR.mkdir(parents=True, exist_ok=True)
-        target = CODE_PROJECT_DIR / nom
+        # Separe les dossiers par session pour eviter les collisions entre sessions
+        session_safe = re.sub(r'[<>:"/\\|?*]', "_", str(self._session_id)).strip("_")
+        target = CODE_PROJECT_DIR / ("{}_{}".format(session_safe, nom))
         if target.exists() and any(target.iterdir()):
             if not messagebox.askyesno(
                 "Dossier existant",
