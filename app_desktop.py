@@ -1340,6 +1340,7 @@ class App(ctk.CTk):
         self._learning_sujets = []
         self.learning_mode_window = None
         self._preview_window = None
+        self._changer_profil_demande = False
 
         # Dossier de creations separe par profil (images, PDFs, pending)
         global IA_CREATIONS_DIR
@@ -1427,6 +1428,7 @@ class App(ctk.CTk):
         right_btns = ctk.CTkFrame(header, fg_color="transparent")
         right_btns.pack(side="right", padx=10, pady=6)
         ctk.CTkButton(right_btns, text="Reglages", width=100, height=34, command=self.open_settings, fg_color="#263547", hover_color="#34475c", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
+        ctk.CTkButton(right_btns, text="Changer de profil", width=120, height=34, command=self._changer_profil, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
         ctk.CTkButton(right_btns, text="Joindre un fichier", width=126, height=34, command=self.attach_file, fg_color="#263547", hover_color="#34475c", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
         ctk.CTkButton(right_btns, text="Fichiers IA", width=92, height=34, command=self.open_ai_creations_folder, fg_color="#263547", hover_color="#34475c", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
 
@@ -4286,6 +4288,19 @@ Par quoi souhaitez-vous commencer ?"""
         finally:
             token = None
 
+    def _changer_profil(self):
+        """Ferme la session actuelle et revient au choix de profil."""
+        if self.dev_window is not None:
+            try:
+                self.dev_window.destroy()
+            except Exception:
+                pass
+            self.dev_window = None
+        self.streaming = False
+        self._suppress_streaming = False
+        self._changer_profil_demande = True
+        self.destroy()
+
     # ---------- Settings ----------
     def open_settings(self):
         win = ctk.CTkToplevel(self)
@@ -5588,27 +5603,38 @@ class ProfileSelector(ctk.CTk):
 def main():
     _install_log_redirect()
     try:
-        selector = ProfileSelector()
-        selector.mainloop()
-        profil = selector.profil_choisi
-        if profil is None:
-            return
-        app = App(profil=profil)
-        app.mainloop()
-    except Exception:
-        detail = traceback.format_exc()
-        try:
-            sys.stderr.write(detail)
-        except Exception:
-            pass
-        try:
-            messagebox.showerror(
-                "Calisto s'est arrete",
-                "Une erreur inattendue est survenue :\n\n{}".format(detail[-700:]),
-            )
-        except Exception:
-            pass
-        sys.exit(1)
+        changer_profil = True
+        while changer_profil:
+            try:
+                selector = ProfileSelector()
+                selector.mainloop()
+                profil = selector.profil_choisi
+                if profil is None:
+                    changer_profil = False
+                    continue
+                app = App(profil=profil)
+                app.mainloop()
+                if getattr(app, "_changer_profil_demande", False):
+                    changer_profil = True
+                else:
+                    changer_profil = False
+            except Exception:
+                detail = traceback.format_exc()
+                try:
+                    sys.stderr.write(detail)
+                except Exception:
+                    pass
+                try:
+                    messagebox.showerror(
+                        "Calisto s'est arrete",
+                        "Une erreur inattendue est survenue :\n\n{}".format(detail[-700:]),
+                    )
+                except Exception:
+                    pass
+                changer_profil = False
+                sys.exit(1)
+    except SystemExit:
+        pass
 
 
 if __name__ == "__main__":
