@@ -1339,21 +1339,102 @@ class App(ctk.CTk):
         self._is_repeat_query = False
         self._pending_editor_context = ""
         self._learning_sujets = []
-        self._session_id = "sess_" + uuid.uuid4().hex[:8]
         self.learning_mode_window = None
         self._preview_window = None
 
-        # Dossier de creations separe par session (images, PDFs, pending)
-        global IA_CREATIONS_DIR
-        base_state = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Calisto"
-        IA_CREATIONS_DIR = base_state / "ia_creations" / ("session_" + self._session_id)
-        IA_CREATIONS_DIR.mkdir(parents=True, exist_ok=True)
-
+        # Selection de session avant initialisation de l'UI
+        self._show_session_selector()
+        # Apres selection, self._session_id et IA_CREATIONS_DIR sont definis
+        self.title("Calisto - Assistant IA (session {})".format(self._session_id))
         self._build_ui()
         self._send_welcome_message()
         self._check_ollama()
         self._start_ai()
         self.after(100, self._process_ui_queue)
+
+    def _show_session_selector(self):
+        """Affiche une fenetre pour choisir ou creer une session."""
+        self._session_id = None
+        selector = ctk.CTkToplevel(self)
+        selector.title("Calisto - Choisir une session")
+        selector.geometry("500x400")
+        selector.transient(self)
+        selector.grab_set()
+
+        ctk.CTkLabel(
+            selector, text="Sessions existantes", font=ctk.CTkFont(size=16, weight="bold")
+        ).pack(pady=(20, 10))
+
+        list_frame = ctk.CTkScrollableFrame(selector, fg_color="transparent", width=440, height=220)
+        list_frame.pack(padx=20, pady=10)
+
+        # Dossier des sessions (mémoire de conversation)
+        if os.name == "nt":
+            state_root = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
+        else:
+            state_root = Path(os.environ.get("XDG_STATE_HOME", str(Path.home() / ".local" / "state")))
+        memory_root = state_root / "Calisto" / "chat_memory"
+
+        sessions = []
+        if memory_root.exists():
+            for f in sorted(memory_root.glob("*.json")):
+                try:
+                    import json
+                    data = json.loads(f.read_text(encoding="utf-8"))
+                    pk = data.get("project_key", "")
+                    if pk.startswith("session_"):
+                        sessions.append((pk, f.stem[:12], data.get("updated", "")))
+                except Exception:
+                    pass
+
+        selected = ctk.StringVar(value="")
+
+        def refresh_list():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            if not sessions:
+                ctk.CTkLabel(list_frame, text="Aucune session existante.", text_color=TEXT_MUTED).pack(pady=10)
+            else:
+                for pk, short, updated in sessions:
+                    rb = ctk.CTkRadioButton(
+                        list_frame,
+                        text="{} (mise a jour : {})".format(short, updated),
+                        variable=selected,
+                        value=pk,
+                        font=ctk.CTkFont(size=12),
+                    )
+                    rb.pack(anchor="w", padx=10, pady=4)
+
+        refresh_list()
+
+        btn_frame = ctk.CTkFrame(selector, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        def choisir_nouvelle():
+            new_id = "sess_" + uuid.uuid4().hex[:8]
+            self._session_id = new_id
+            selector.destroy()
+
+        def choisir_existante():
+            pk = selected.get()
+            if not pk:
+                return
+            self._session_id = pk
+            selector.destroy()
+
+        ctk.CTkButton(btn_frame, text="Nouvelle session", command=choisir_nouvelle, fg_color=ACCENT, hover_color=ACCENT_HOVER, width=130).pack(side="left", padx=8)
+        ctk.CTkButton(btn_frame, text="Ouvrir la selectionnee", command=choisir_existante, fg_color="#263547", hover_color="#34475c", width=150).pack(side="left", padx=8)
+
+        self.wait_window(selector)
+
+        if self._session_id is None:
+            self._session_id = "sess_" + uuid.uuid4().hex[:8]
+
+        # Definir IA_CREATIONS_DIR pour cette session
+        global IA_CREATIONS_DIR
+        base_state = Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData" / "Local"))) / "Calisto"
+        IA_CREATIONS_DIR = base_state / "ia_creations" / ("session_" + self._session_id)
+        IA_CREATIONS_DIR.mkdir(parents=True, exist_ok=True)
 
     def _initial_geometry(self):
         """Taille de la fenetre : 92% de l'ecran, exprimee en unites de l'interface."""
@@ -1428,6 +1509,7 @@ class App(ctk.CTk):
         right_btns = ctk.CTkFrame(header, fg_color="transparent")
         right_btns.pack(side="right", padx=10, pady=6)
         ctk.CTkButton(right_btns, text="Reglages", width=100, height=34, command=self.open_settings, fg_color="#263547", hover_color="#34475c", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
+        ctk.CTkButton(right_btns, text="Changer de session", width=120, height=34, command=self._changer_session, fg_color="#6b7280", hover_color="#4b5563", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
         ctk.CTkButton(right_btns, text="Joindre un fichier", width=126, height=34, command=self.attach_file, fg_color="#263547", hover_color="#34475c", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
         ctk.CTkButton(right_btns, text="Fichiers IA", width=92, height=34, command=self.open_ai_creations_folder, fg_color="#263547", hover_color="#34475c", font=ctk.CTkFont(size=11), corner_radius=9).pack(side="right", padx=4)
 
@@ -4413,6 +4495,47 @@ Par quoi souhaitez-vous commencer ?"""
         btns.pack(fill="x", padx=30, pady=20)
         ctk.CTkButton(btns, text="Annuler", width=100, command=win.destroy, fg_color=BG_INPUT, hover_color="#4b4c54", font=ctk.CTkFont(size=12)).pack(side="right", padx=10)
         ctk.CTkButton(btns, text="Enregistrer", width=100, command=save_close, fg_color=ACCENT, hover_color=ACCENT_HOVER, font=ctk.CTkFont(size=13, weight="bold")).pack(side="right")
+
+    def _changer_session(self):
+        """Ferme la session actuelle et revient au choix de session."""
+        # Fermer la fenetre editeur si ouverte
+        if self.dev_window is not None:
+            try:
+                self.dev_window.destroy()
+            except Exception:
+                pass
+            self.dev_window = None
+
+        # Arreter le streaming en cours
+        self.streaming = False
+        self._suppress_streaming = False
+
+        # Detruire tous les widgets de la fenetre principale
+        for widget in self.winfo_children():
+            try:
+                widget.destroy()
+            except Exception:
+                pass
+
+        # Reinitialiser l'etat de la session
+        self.messages = []
+        self.conversation_summary = ""
+        self._current_project_dir = None
+        self._mem_facts = {}
+        self._mem_facts_path = None
+        self.attached_files = []
+        self.ui_queue = queue.Queue()
+
+        # Reouvrir le selecteur de session
+        self._show_session_selector()
+        self.title("Calisto - Assistant IA (session {})".format(self._session_id))
+
+        # Reconstruire l'UI avec la nouvelle session
+        self._build_ui()
+        self._send_welcome_message()
+        self._check_ollama()
+        self._start_ai()
+        self.after(100, self._process_ui_queue)
 
     # ---------- Learning mode ----------
     def build_library_tab(self):
